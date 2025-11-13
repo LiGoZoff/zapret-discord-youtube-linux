@@ -1,6 +1,5 @@
 Zapret для линукса, работающий на основе конвертирования стратегий предназначенных для винды.
 
-Актуально под версию [zapret-discord-youtube](https://github.com/Flowseal/zapret-discord-youtube) v1.9.0b
 
 **Стратегии, бинарники и листы взяты из [zapret-discord-youtube](https://github.com/Flowseal/zapret-discord-youtube) и [youtubediscord](https://github.com/youtubediscord/zapret)** 
 ## Использование
