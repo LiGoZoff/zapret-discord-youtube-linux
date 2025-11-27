@@ -43,7 +43,7 @@ extract_args() {
     | tr -s '[:space:]' ' ' \
     | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' \
     | sed -E 's/[\x00-\x1F\x7F]//g' \
-    | sed -E 's/[\^!]+//g'
+    | sed -E 's/\^!/__DPI_DESYNC_FAKE_TLS_AUTO__/g'
 }
 
 convert_token() {
@@ -59,6 +59,18 @@ convert_token() {
   t="${t//%LISTS%/\$ROOT_DIR/lists/}"
   t="${t//\\//}"
   printf '%s' "$t"
+}
+
+get_tls_file() {
+  local block="$1"
+  local filter="$2"
+  
+  # Определяем файл на основе фильтра
+  if [[ "$filter" == *"2053"* ]] || [[ "$filter" == *"2083"* ]] || [[ "$filter" == *"discord"* ]]; then
+    printf '/opt/zapret/files/fake/tls_clienthello_7.bin'
+  else
+    printf '/opt/zapret/files/fake/tls_clienthello_11.bin'
+  fi
 }
 
 sanitize_ports() {
@@ -196,13 +208,27 @@ for bat in "$WINDOWS_DIR"/general*.bat; do
 
     if [[ "$t" == *=* ]]; then
       key="${t%%=*}"; val_raw="${t#*=}"
-      val_conv="$(convert_token "$val_raw")"
-      if [[ "$val_conv" == /* || "$val_conv" == *".bin" || "$val_conv" == *".txt" || "$val_conv" == *list* || "$val_conv" == *ipset* ]]; then
-        if [[ "$val_conv" != /* ]]; then
-          if [[ "$val_conv" == *.bin ]]; then
-            val_conv="/opt/zapret/files/fake/$(basename "$val_conv")"
-          else
-            val_conv="/opt/zapret/ipset/$(basename "$val_conv")"
+      
+      # Обработка __DPI_DESYNC_FAKE_TLS_AUTO__
+      if [[ "$val_raw" == "__DPI_DESYNC_FAKE_TLS_AUTO__" ]]; then
+        # Найти фильтр из предыдущих элементов в текущем блоке
+        tls_file="/opt/zapret/files/fake/tls_clienthello_11.bin"
+        for prev_token in "${cur[@]}"; do
+          if [[ "$prev_token" == *"discord"* ]] || [[ "$prev_token" == *"2053"* ]] || [[ "$prev_token" == *"2083"* ]]; then
+            tls_file="/opt/zapret/files/fake/tls_clienthello_7.bin"
+            break
+          fi
+        done
+        val_conv="$tls_file"
+      else
+        val_conv="$(convert_token "$val_raw")"
+        if [[ "$val_conv" == /* || "$val_conv" == *".bin" || "$val_conv" == *".txt" || "$val_conv" == *list* || "$val_conv" == *ipset* ]]; then
+          if [[ "$val_conv" != /* ]]; then
+            if [[ "$val_conv" == *.bin ]]; then
+              val_conv="/opt/zapret/files/fake/$(basename "$val_conv")"
+            else
+              val_conv="/opt/zapret/ipset/$(basename "$val_conv")"
+            fi
           fi
         fi
       fi

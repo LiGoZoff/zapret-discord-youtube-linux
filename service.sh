@@ -35,15 +35,19 @@ service_status() {
   echo "=== Status Service ==="
   echo ""
   
-  sudo systemctl status zapret.service
+  sudo systemctl status zapret.service || true
   
   echo ""
   echo "=== Active Strategy ==="
-  if [ -f "$REPO_ROOT/.active_strategy" ]; then
-    active_strategy=$(cat "$REPO_ROOT/.active_strategy")
-    echo "Активная стратегия: $active_strategy"
+  if sudo systemctl is-active --quiet zapret.service 2>/dev/null; then
+    if [ -f "$REPO_ROOT/.active_strategy" ]; then
+      active_strategy=$(cat "$REPO_ROOT/.active_strategy")
+      echo "Активная стратегия: $active_strategy"
+    else
+      echo "Активная стратегия: не установлена"
+    fi
   else
-    echo "Активная стратегия: не установлена"
+    echo "Активная стратегия: сервис выключен"
   fi
   echo ""
   
@@ -262,23 +266,6 @@ copy_missing_files_to_opt() {
 
   sudo mkdir -p "$files_fake_dir" "$ipset_dir"
 
-  mapfile -t bins < <(grep -oE '[^ "=/]+\.bin' "$config_file" | sort -u || true)
-  for bin in "${bins[@]}"; do
-    local src=""
-    if [ -f "$REPO_ROOT/files/$bin" ]; then
-      src="$REPO_ROOT/files/$bin"
-    elif [ -f "$REPO_ROOT/bin/$bin" ]; then
-      src="$REPO_ROOT/bin/$bin"
-    elif [ -f "$REPO_ROOT/$bin" ]; then
-      src="$REPO_ROOT/$bin"
-    fi
-    if [ -n "$src" ] && [ -f "$src" ]; then
-      if [ ! -f "${files_fake_dir}/${bin}" ]; then
-        sudo cp -a "$src" "$files_fake_dir/"
-      fi
-    fi
-  done
-
   mapfile -t lists < <(grep -oE '[^ "=/]+\.txt' "$config_file" | sed -E 's@^.*/@@' | sort -u || true)
   for lst in "${lists[@]}"; do
     local src="${REPO_ROOT}/lists/${lst}"
@@ -302,149 +289,32 @@ copy_missing_files_to_opt() {
   done
 }
 
-ipset_switch() {
-  local backup_suffix=".backup"
-  ipset_status
-  clear_screen
-
-  declare -A files_map=()
-  files_map["${REPO_ROOT}/lists/$(basename "$IPSET_LIST_FILE")"]=1
-
-  if [ -d "${REPO_ROOT}/lists" ]; then
-    for f in "${REPO_ROOT}/lists"/*.txt; do
-      [ -f "$f" ] || continue
-      files_map["$f"]=1
-    done
-  fi
-
-  if [ -f "${OPT_REPO}/config" ]; then
-    while IFS= read -r line; do
-      for prefix in '--hostlist=' '--hostlist-exclude='; do
-        if [[ "$line" == *"$prefix"* ]]; then
-          val="${line#*$prefix}"
-          val="${val%% *}"
-          val="${val%\"}"
-          val="${val#\"}"
-          if [[ "$val" =~ ^/ ]]; then
-            base="$(basename "$val")"
-            files_map["${REPO_ROOT}/lists/$base"]=1
-          else
-            files_map["${REPO_ROOT}/lists/$val"]=1
-          fi
-        fi
-      done
-    done < "${OPT_REPO}/config"
-  fi
-
-  ipset_files=()
-  for k in "${!files_map[@]}"; do
-    ipset_files+=("$k")
-  done
-
-  if [ "${#ipset_files[@]}" -eq 0 ]; then
-    read -rp "Нажмите Enter для возврата..."
-    return
-  fi
-
-  if [ "$IPsetStatus" = "loaded" ]; then
-    for lf in "${ipset_files[@]}"; do
-      [ -z "$lf" ] && continue
-      mkdir -p "$(dirname "$lf")"
-      if [ -f "$lf" ]; then
-        content="$(cat "$lf" 2>/dev/null || true)"
-        if [ -n "$content" ] && ! printf '%s' "$content" | grep -q -x "203\.0\.113\.113/32"; then
-          if [ ! -f "${lf}${backup_suffix}" ] || [ ! -s "${lf}${backup_suffix}" ]; then
-            echo "$content" > "${lf}${backup_suffix}"
-          fi
-        fi
-      fi
-      printf '203.0.113.113/32\n' > "$lf"
-    done
-
-  elif [ "$IPsetStatus" = "none" ]; then
-    for lf in "${ipset_files[@]}"; do
-      [ -z "$lf" ] && continue
-      mkdir -p "$(dirname "$lf")"
-      backup="${lf}${backup_suffix}"
-      if [ ! -f "$backup" ] || [ ! -s "$backup" ]; then
-        content="$(cat "$lf" 2>/dev/null || true)"
-        if [ -n "$content" ] && ! printf '%s' "$content" | grep -q -x "203\.0\.113\.113/32"; then
-          echo "$content" > "$backup"
-        fi
-      fi
-      : > "$lf"
-    done
-
-  else
-    local restored=0
-    for lf in "${ipset_files[@]}"; do
-      [ -z "$lf" ] && continue
-      backup="${lf}${backup_suffix}"
-      if [ -f "$backup" ] && [ -s "$backup" ]; then
-        cp -a "$backup" "$lf"
-        restored=$((restored+1))
-      fi
-    done
-  fi
-
-}
-
 show_menu() {
   clear_screen
   local gf_status="(выключен)"
   if [ -f "$GAMEFLAG_FILE" ]; then gf_status="(включён)"; fi
-  ipset_status
-  local ipset_disp="(unknown)"
-  if [ "$IPsetStatus" = "loaded" ]; then ipset_disp="(loaded)"; fi
-  if [ "$IPsetStatus" = "none" ]; then ipset_disp="(none)"; fi
-  if [ "$IPsetStatus" = "any" ]; then ipset_disp="(any)"; fi
 
   cat <<MENU
 Выберите действие:
 1) Install strategies
-2) Remove service
-3) Status service
-4) Toggle game filter $gf_status
-5) Switch ipset $ipset_disp
+2) Convert strategies
+3) Remove service
+4) Status service
+5) Toggle game filter $gf_status
 6) Exit
 MENU
   read -rp "Ваш выбор: " choice
   case "$choice" in
     1) install_selected_strategy ;;
-    2) remove_service ;;
-    3) service_status ;;
-    4) toggle_gamefilter ;;
-    5) ipset_switch ;;
+    2) convert_strategies ;;
+    3) remove_service ;;
+    4) service_status ;;
+    5) toggle_gamefilter ;;
     6) clear_screen; echo "Выход."; exit 0 ;;
     *) echo "Неверный выбор."; read -rp "Нажмите Enter...";;
   esac
 }
 
-ipset_status() {
-  IPsetStatus="unknown"
-  local any_loaded=0 any_none=0 any_empty=0
-  for f in "$REPO_ROOT"/lists/*.txt; do
-    [ -f "$f" ] || continue
-    content="$(cat "$f" 2>/dev/null || true)"
-    if [ -z "$content" ]; then
-      any_empty=1
-    elif printf '%s' "$content" | grep -q -x '203\.0\.113\.113/32'; then
-      any_none=1
-    else
-      any_loaded=1
-    fi
-  done
-
-  if [ "$any_loaded" -gt 0 ]; then
-    IPsetStatus="loaded"
-  elif [ "$any_none" -gt 0 ] && [ "$any_empty" -eq 0 ]; then
-    IPsetStatus="none"
-  elif [ "$any_empty" -gt 0 ] && [ "$any_none" -eq 0 ]; then
-    IPsetStatus="any"
-  else
-    IPsetStatus="unknown"
-  fi
-}
 
 remove_service() {
   clear_screen
@@ -457,7 +327,7 @@ remove_service() {
   fi
 }
 
-install_selected_strategy() {
+convert_strategies() {
   clear_screen
   
   if ! ensure_convert; then
@@ -467,10 +337,18 @@ install_selected_strategy() {
   fi
 
   echo "Конвертация стратегий..."
-  if ! bash "$CONVERT_SCRIPT" > /dev/null 2>&1; then
-    echo "Конвертация стратегий завершилась с ошибкой, продолжу попытки."
+  if bash "$CONVERT_SCRIPT"; then
+    echo "Конвертация стратегий завершена успешно."
+  else
+    echo "Конвертация стратегий завершилась с ошибкой."
   fi
+  
+  read -rp "Нажмите Enter для возврата в меню..."
+}
 
+install_selected_strategy() {
+  clear_screen
+  
   if ! clone_opt_repo_if_needed; then
     echo "Не удалось подготовить /opt/zapret — отмена."
     read -rp "Нажмите Enter..."
@@ -487,24 +365,24 @@ install_selected_strategy() {
 
   clear_screen
   
-  local cols=3
-  local rows=$(( (${#strategies[@]} + cols - 1) / cols ))
-  
   echo "Доступные стратегии:"
   echo ""
   
-  local idx=1
+  local cols=3
+  local rows=$(( (${#strategies[@]} + cols - 1) / cols ))
+  
   for ((i=0; i<rows; i++)); do
     for ((j=0; j<cols; j++)); do
-      local pos=$((i + j * rows))
+      local pos=$((j * rows + i))
       if [ $pos -lt ${#strategies[@]} ]; then
-        printf "%-35s" "$idx) ${strategies[$pos]}"
-        idx=$((idx+1))
+        local num=$((pos + 1))
+        printf "%-40s" "$num) ${strategies[$pos]}"
       fi
     done
     echo ""
   done
   
+  local idx=$((${#strategies[@]} + 1))
   echo ""
   echo "$idx) Отмена"
   echo ""
