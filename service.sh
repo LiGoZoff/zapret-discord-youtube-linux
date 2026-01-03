@@ -8,9 +8,6 @@ STRAT_DIR="$REPO_ROOT/linux-strategies"
 GAMEFLAG_FILE="$REPO_ROOT/.gamefilter_enabled"
 OPT_REPO="/opt/zapret"
 
-IPSET_LIST_FILE="$REPO_ROOT/lists/ipset-all.txt"
-IPSET_BACKUP_SUFFIX=".backup"
-
 clear_screen() { printf '\033c'; }
 
 ensure_convert() {
@@ -171,6 +168,7 @@ apply_gamefilter_to_file() {
       seen_tcp["$part"]=1
     done
   done
+
   for entry in "${udp_entries[@]}"; do
     entry="$(normalize_list "$entry")"
     IFS=',' read -r -a parts <<< "$entry"
@@ -252,6 +250,99 @@ finalize_for_opt() {
   sudo sed -i 's/NFQWS_PORTS_UDP="\([^"]\)/NFQWS_PORTS_UDP="\1/g' "$tmp"
 }
 
+load_binaries() {
+  clear_screen
+
+  if ! clone_opt_repo_if_needed; then
+    echo "Не удалось подготовить /opt/zapret — отмена."
+    read -rp "Нажмите Enter..."
+    return
+  fi
+
+  copy_files_replace_to_opt || true
+
+  local files_fake_dir="${OPT_REPO}/files/fake"
+  local ipset_dir="${OPT_REPO}/ipset"
+  local backup_suffix=".backup"
+
+  sudo mkdir -p "$files_fake_dir" "$ipset_dir"
+
+  # copy all lists
+  if [ -d "${REPO_ROOT}/lists" ]; then
+    for src_list in "${REPO_ROOT}/lists"/*.txt; do
+      [ -f "$src_list" ] || continue
+      lst_name=$(basename "$src_list")
+      tgt="$ipset_dir/$lst_name"
+      tgt_backup="${tgt}${backup_suffix}"
+      if [ -f "$tgt" ]; then
+        if ! sudo cmp -s "$src_list" "$tgt"; then
+          if [ ! -f "$tgt_backup" ]; then
+            sudo cp -a "$tgt" "$tgt_backup"
+          fi
+          sudo cp -a "$src_list" "$tgt"
+        fi
+      else
+        sudo cp -a "$src_list" "$tgt"
+      fi
+    done
+  fi
+
+  # copy all .bin files
+  if [ -d "${REPO_ROOT}/bin" ]; then
+    for src_bin in "${REPO_ROOT}/bin"/*.bin; do
+      [ -f "$src_bin" ] || continue
+      bin_name=$(basename "$src_bin")
+      tgt_bin="$files_fake_dir/$bin_name"
+      tgt_bin_backup="${tgt_bin}${backup_suffix}"
+      if [ -f "$tgt_bin" ]; then
+        if ! sudo cmp -s "$src_bin" "$tgt_bin"; then
+          if [ ! -f "$tgt_bin_backup" ]; then
+            sudo cp -a "$tgt_bin" "$tgt_bin_backup"
+          fi
+          sudo cp -a "$src_bin" "$tgt_bin"
+        fi
+      else
+        sudo cp -a "$src_bin" "$tgt_bin"
+      fi
+    done
+  fi
+
+  echo "Файлы ipset и бинари загружены в /opt/zapret." 
+  read -rp "Нажмите Enter для возврата в меню..."
+}
+
+copy_files_replace_to_opt() {
+  if ! clone_opt_repo_if_needed; then
+    echo "Не удалось подготовить /opt/zapret — отмена."
+    return 1
+  fi
+
+  local files_fake_dir="${OPT_REPO}/files/fake"
+  local ipset_dir="${OPT_REPO}/ipset"
+
+  sudo mkdir -p "$files_fake_dir" "$ipset_dir"
+
+  if [ -d "${REPO_ROOT}/lists" ]; then
+    for src_list in "${REPO_ROOT}/lists"/*.txt; do
+      [ -f "$src_list" ] || continue
+      lst_name=$(basename "$src_list")
+      tgt="$ipset_dir/$lst_name"
+      sudo cp -af "$src_list" "$tgt"
+    done
+  fi
+
+  if [ -d "${REPO_ROOT}/bin" ]; then
+    for src_bin in "${REPO_ROOT}/bin"/*.bin; do
+      [ -f "$src_bin" ] || continue
+      bin_name=$(basename "$src_bin")
+      tgt_bin="$files_fake_dir/$bin_name"
+      sudo cp -af "$src_bin" "$tgt_bin"
+    done
+  fi
+
+  return 0
+}
+
 replace_placeholders() {
   local file="$1"
   sed -E -i 's/%BIN%/\$ROOT_DIR\/bin/g' "$file"
@@ -266,7 +357,11 @@ copy_missing_files_to_opt() {
 
   sudo mkdir -p "$files_fake_dir" "$ipset_dir"
 
-  mapfile -t lists < <(grep -oE '[^ "=/]+\.txt' "$config_file" | sed -E 's@^.*/@@' | sort -u || true)
+  mapfile -t lists < <(
+    grep -oE '[%$A-Za-z0-9_./{}:-]+\.txt' "$config_file" \
+      | sed -E -e 's@^.*/@@' -e 's/^%[^%]+%//' -e 's/^\$[A-Za-z_][A-Za-z0-9_]*\///' -e 's/^\$\{[^}]+\}\///' -e 's@^/opt/zapret/ipset/@@' \
+      | sort -u || true
+  )
   for lst in "${lists[@]}"; do
     local src="${REPO_ROOT}/lists/${lst}"
     local tgt="${ipset_dir}/${lst}"
@@ -285,6 +380,31 @@ copy_missing_files_to_opt() {
       fi
     else
       sudo cp -a "$src" "$tgt"
+    fi
+  done
+
+  mapfile -t bins < <(grep -oE "[^ \"'=]+\.bin" "$config_file" | sed -E 's@^.*/@@' | sort -u || true)
+  for binfile in "${bins[@]}"; do
+
+    [ -z "$binfile" ] && continue
+    local src_bin="$REPO_ROOT/bin/$binfile"
+    local tgt_bin="$files_fake_dir/$binfile"
+    local tgt_bin_backup="${tgt_bin}${backup_suffix}"
+
+    if [ ! -f "$src_bin" ]; then
+
+      continue
+    fi
+
+    if [ -f "$tgt_bin" ]; then
+      if ! sudo cmp -s "$src_bin" "$tgt_bin"; then
+        if [ ! -f "$tgt_bin_backup" ]; then
+          sudo cp -a "$tgt_bin" "$tgt_bin_backup"
+        fi
+        sudo cp -a "$src_bin" "$tgt_bin"
+      fi
+    else
+      sudo cp -a "$src_bin" "$tgt_bin"
     fi
   done
 }
@@ -355,7 +475,14 @@ install_selected_strategy() {
     return
   fi
 
-  mapfile -t strategies < <(ls -1 "$STRAT_DIR"/*.sh 2>/dev/null | xargs -n1 basename | grep -v convert-strategies | sort || true)
+  strategies=()
+  for file in "$STRAT_DIR"/*.sh; do
+    [ -f "$file" ] || continue
+    name=$(basename "$file")
+    [[ "$name" == "convert-strategies.sh" ]] && continue
+    strategies+=("$name")
+  done
+  mapfile -t strategies < <(printf '%s\n' "${strategies[@]}" | sort)
 
   if [ "${#strategies[@]}" -eq 0 ]; then
     echo "Стратегии не найдены в $STRAT_DIR"
@@ -364,36 +491,43 @@ install_selected_strategy() {
   fi
 
   clear_screen
-  
+
   echo "Доступные стратегии:"
   echo ""
-  
+
+  local max_len=0
+  for strat in "${strategies[@]}"; do
+    len=${#strat}
+    (( len > max_len )) && max_len=$len
+  done
+  local width=$((max_len + 5))
+
   local cols=3
   local rows=$(( (${#strategies[@]} + cols - 1) / cols ))
-  
+
   for ((i=0; i<rows; i++)); do
     for ((j=0; j<cols; j++)); do
       local pos=$((j * rows + i))
       if [ $pos -lt ${#strategies[@]} ]; then
         local num=$((pos + 1))
-        printf "%-40s" "$num) ${strategies[$pos]}"
+        printf "%-${width}s" "$num) ${strategies[$pos]}"
       fi
     done
     echo ""
   done
-  
+
   local idx=$((${#strategies[@]} + 1))
   echo ""
   echo "$idx) Отмена"
   echo ""
   
-  read -rp "Выберите стратегию (номер): " strat_choice
-  
-  if [ "$strat_choice" -lt 1 ] || [ "$strat_choice" -gt "$idx" ]; then
-    echo "Неверный выбор."
-    read -rp "Нажмите Enter..."
-    return
-  fi
+  while true; do
+    read -rp "Выберите стратегию (номер): " strat_choice
+    if [[ "$strat_choice" =~ ^[0-9]+$ ]] && [ "$strat_choice" -ge 1 ] && [ "$strat_choice" -le "$idx" ]; then
+      break
+    fi
+    echo "Неверный выбор. Повторите ввод."
+  done
 
   if [ "$strat_choice" -eq "$idx" ]; then
     return

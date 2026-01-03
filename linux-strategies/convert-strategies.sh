@@ -65,7 +65,6 @@ get_tls_file() {
   local block="$1"
   local filter="$2"
   
-  # Определяем файл на основе фильтра
   if [[ "$filter" == *"2053"* ]] || [[ "$filter" == *"2083"* ]] || [[ "$filter" == *"discord"* ]]; then
     printf '/opt/zapret/files/fake/tls_clienthello_7.bin'
   else
@@ -121,12 +120,12 @@ write_with_replacements() {
   fi
 }
 
-for bat in "$WINDOWS_DIR"/general*.bat; do
+for bat in "$WINDOWS_DIR"/*.bat; do
   [ -e "$bat" ] || continue
   echo "Converting $bat"
   name="$(basename "$bat")"
   safe="$(safe_name "$name")"
-  out="$OUT_DIR/${safe}.sh"
+  out="$OUT_DIR/${name%.bat}.sh"
 
   nfq_tcp=""
   nfq_udp=""
@@ -209,9 +208,7 @@ for bat in "$WINDOWS_DIR"/general*.bat; do
     if [[ "$t" == *=* ]]; then
       key="${t%%=*}"; val_raw="${t#*=}"
       
-      # Обработка __DPI_DESYNC_FAKE_TLS_AUTO__
       if [[ "$val_raw" == "__DPI_DESYNC_FAKE_TLS_AUTO__" ]]; then
-        # Найти фильтр из предыдущих элементов в текущем блоке
         tls_file="/opt/zapret/files/fake/tls_clienthello_11.bin"
         for prev_token in "${cur[@]}"; do
           if [[ "$prev_token" == *"discord"* ]] || [[ "$prev_token" == *"2053"* ]] || [[ "$prev_token" == *"2083"* ]]; then
