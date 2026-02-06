@@ -12,7 +12,8 @@ clear_screen() { printf '\033c'; }
 
 ensure_convert() {
   if [ ! -x "$CONVERT_SCRIPT" ]; then
-    echo "Конвертер не найден или не исполняемый: $CONVERT_SCRIPT" >&2
+    sudo chmod +x $CONVERT_SCRIPTS
+    echo "Конвертер не найден: $CONVERT_SCRIPT" >&2
     return 1
   fi
   return 0
