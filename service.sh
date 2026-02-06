@@ -116,6 +116,12 @@ clone_opt_repo_if_needed() {
     echo "Предупреждение: install_bin.sh не найден или не исполняемый"
   fi
 
+  if [ -x "$OPT_REPO/install_easy.sh" ]; then
+    sudo chmod +x "$OPT_REPO/install_easy.sh" || true
+  else
+    echo "Предупреждение: install_easy.sh не найден"
+  fi
+
   echo "Установка базовых компонентов завершена."
   return 0
 }
