@@ -17,13 +17,14 @@ git clone https://github.com/LiGoZoff/zapret-windows-linux.git
 
 `Service.sh` (адаптированный под линукс service.bat из [zapret-discord-youtube](https://github.com/Flowseal/zapret-discord-youtube))
 
+- **`On/Off strategy`** - запускает последнюю активную стретегию/отключает стратегию с удалением из автозагрузки
 - **`Install Service`** - производится установка уже сконвертированных стратегий, установка стратегии происходит через /opt/[[https://github.com/bol-van/zapret|zapret/]]
 - **`Convert strategies`** - происходит конвертация стратегий из папки windows-strategies формата general*.bat
-- **`Remove Services`** - выключает запрет и удаляет из автозагрузки
 - **`Status Service`** - показывает состояние
-- **`Switch Game Filter`** - переключение режима обхода для игр (и других сервисов, использующих UDP и TCP на портах выше 1023).  
+- **`Toggle autorun`** - включает/отключает автозагрузку активной стратегии
+- **`Toggle Game Filter`** - переключение режима обхода для игр (и других сервисов, использующих UDP и TCP на портах выше 1023).  
   **После переключения требуется перезапуск стратегии.**  
-  В скобках указан текущий статус (включено/выключено).
+  В скобках указан текущий статус.
 
 `converter-strategies.sh` - Используется для конвертации стратегий из папки windows-strategies формата general*.bat
 

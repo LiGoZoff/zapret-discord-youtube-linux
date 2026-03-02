@@ -5,27 +5,92 @@ REPO_ROOT="$(readlink -f "$SCRIPT_DIR")"
 BIN_DIR="$REPO_ROOT/bin"
 CONVERT_SCRIPT="$REPO_ROOT/linux-strategies/convert-strategies.sh"
 STRAT_DIR="$REPO_ROOT/linux-strategies"
-GAMEFLAG_FILE="$REPO_ROOT/.gamefilter_enabled"
+GAMEFLAG_FILE="$REPO_ROOT/.gamefilter_mode"
+AUTORUN_FLAG="$REPO_ROOT/.autorun_enabled"
+
 OPT_REPO="/opt/zapret"
 
 clear_screen() { printf '\033c'; }
 
+ensure_user_lists() {
+  mkdir -p "$REPO_ROOT/lists"
+  local list
+  for list in ipset-exclude-user.txt list-general-user.txt list-exclude-user.txt; do
+    if [ ! -f "$REPO_ROOT/lists/$list" ]; then
+      case "$list" in
+        ipset-exclude-user.txt)
+          printf '203.0.113.113/32\n' > "$REPO_ROOT/lists/$list"
+          ;;
+        *)
+          : > "$REPO_ROOT/lists/$list"
+          ;;
+      esac
+    fi
+  done
+}
+
+ensure_user_lists
+
 ensure_convert() {
   if [ ! -x "$CONVERT_SCRIPT" ]; then
-    sudo chmod +x $CONVERT_SCRIPTS
-    echo "Конвертер не найден: $CONVERT_SCRIPT" >&2
-    return 1
+    if [ -f "$CONVERT_SCRIPT" ]; then
+      sudo chmod +x "$CONVERT_SCRIPT"
+    else
+      echo "Конвертер не найден: $CONVERT_SCRIPT" >&2
+      return 1
+    fi
   fi
   return 0
 }
 
 toggle_gamefilter() {
   clear_screen
-  if [ -f "$GAMEFLAG_FILE" ]; then
-    rm -f "$GAMEFLAG_FILE"
+  echo "Выберите режим game filter:" 
+  echo "  0. Отключить"
+  echo "  1. TCP и UDP"
+  echo "  2. Только TCP"
+  echo "  3. Только UDP"
+  echo ""
+  
+  local gf_choice="0"
+  read -rp "Выберите опцию (0-3, по умолчанию: 0): " gf_choice
+  [ -z "$gf_choice" ] && gf_choice="0"
+
+  case "$gf_choice" in
+    0)
+      rm -f "$GAMEFLAG_FILE"
+      ;;
+    1)
+      printf "all\n" > "$GAMEFLAG_FILE"
+      ;;
+    2)
+      printf "tcp\n" > "$GAMEFLAG_FILE"
+      ;;
+    3)
+      printf "udp\n" > "$GAMEFLAG_FILE"
+      ;;
+    *)
+      echo "Неверный выбор."
+      read -rp "Нажмите Enter для возврата в меню..."
+      return
+      ;;
+  esac
+
+  echo "Перезагрузите zapret для применения изменений"
+  read -rp "Нажмите Enter для возврата в меню..."
+}
+
+toggle_autorun() {
+  clear_screen
+  if [ -f "$AUTORUN_FLAG" ]; then
+    rm -f "$AUTORUN_FLAG"
+    echo "Автозагрузка отключена."
   else
-    touch "$GAMEFLAG_FILE"
+    touch "$AUTORUN_FLAG"
+    echo "Автозагрузка включена."
   fi
+  echo ""
+  read -rp "Нажмите Enter для возврата в меню..."
 }
 
 service_status() {
@@ -47,9 +112,132 @@ service_status() {
   else
     echo "Активная стратегия: сервис выключен"
   fi
+  
+  echo ""
+  echo "=== Game Filter ==="
+  local gf_mode="отключен"
+  if [ -f "$GAMEFLAG_FILE" ]; then
+    local gf_content=$(cat "$GAMEFLAG_FILE" | tr -d '\n' || echo "disabled")
+    case "$gf_content" in
+      all)
+        gf_mode="включен (TCP и UDP)"
+        ;;
+      tcp)
+        gf_mode="включен (только TCP)"
+        ;;
+      udp)
+        gf_mode="включен (только UDP)"
+        ;;
+      *)
+        gf_mode="отключен"
+        ;;
+    esac
+  fi
+  echo "Game Filter: $gf_mode"
   echo ""
   
   read -rp "Нажмите Enter для возврата в меню..."
+}
+
+manage_strategy() {
+  clear_screen
+  
+  if [ ! -f "$REPO_ROOT/.active_strategy" ]; then
+    echo "Активная стратегия не установлена."
+    read -rp "Нажмите Enter..."
+    return
+  fi
+
+  local active_strategy=$(cat "$REPO_ROOT/.active_strategy")
+  local is_running=0
+  
+  if sudo systemctl is-active --quiet zapret.service 2>/dev/null; then
+    is_running=1
+  fi
+  
+  if [ $is_running -eq 1 ]; then
+    clear_screen
+    echo "Выключаю стратегию: $active_strategy"
+    _uninstall_strategy
+  else
+    clear_screen
+    echo "Активная стратегия: $active_strategy"
+    echo ""
+    echo "Как включить стратегию?"
+    echo "  1. С автозагрузкой"
+    echo "  2. Без автозагрузки"
+    echo ""
+    
+    local autorun_choice="2"
+    read -rp "Выберите (1 или 2): " autorun_choice
+    
+    case "$autorun_choice" in
+      1)
+        touch "$AUTORUN_FLAG"
+        _reinstall_strategy "$active_strategy"
+        ;;
+      2)
+        rm -f "$AUTORUN_FLAG"
+        _reinstall_strategy "$active_strategy"
+        ;;
+      *)
+        echo "Неверный выбор."
+        read -rp "Нажмите Enter..."
+        return
+        ;;
+    esac
+  fi
+}
+
+_reinstall_strategy() {
+  local strategy="$1"
+  local cfg_src="$STRAT_DIR/$strategy"
+
+  if [ ! -f "$cfg_src" ]; then
+    echo "Файл стратегии не найден: $cfg_src"
+    read -rp "Нажмите Enter..."
+    return
+  fi
+
+  if ! clone_opt_repo_if_needed; then
+    echo "Не удалось подготовить /opt/zapret — отмена."
+    read -rp "Нажмите Enter..."
+    return
+  fi
+
+  echo "Переустанавливаю стратегию: $strategy"
+
+  sudo cp -a "$cfg_src" "$OPT_REPO/config"
+  sanitize_strategy_config "${OPT_REPO}/config"
+
+  copy_missing_files_to_opt "${OPT_REPO}/config" || true
+  apply_gamefilter_to_file "${OPT_REPO}/config" || true
+  finalize_for_opt "${OPT_REPO}/config" || true
+
+  if [ -x "$OPT_REPO/install_easy.sh" ]; then
+    sudo bash "$OPT_REPO/install_easy.sh" || {
+      echo "Ошибка при запуске install_easy.sh"
+      read -rp "Нажмите Enter..."
+      return
+    }
+  else
+    echo "Предупреждение: install_easy.sh не найден или не исполняемый в $OPT_REPO"
+  fi
+
+  echo "Переустановка стратегии завершена."
+  read -rp "Нажмите Enter для возврата в меню..."
+}
+
+_uninstall_strategy() {
+  if [ -x "$OPT_REPO/uninstall_easy.sh" ]; then
+    sudo bash "$OPT_REPO/uninstall_easy.sh"
+    rm -f "$AUTORUN_FLAG"
+    echo "Стратегия удалена."
+    read -rp "Нажмите Enter для возврата в меню..."
+  else
+    echo "Предупреждение: uninstall_easy.sh не найден или не исполняемый в $OPT_REPO"
+    read -rp "Нажмите Enter для возврата в меню..."
+  fi
 }
 
 clone_opt_repo_if_needed() {
@@ -156,8 +344,21 @@ apply_gamefilter_to_file() {
   mapfile -t tcp_entries < <(printf '%s\n' "$nfq_opt" | grep -oE -- '--filter-tcp=[^ ]+' | sed -E 's/^--filter-tcp=//' || true)
   mapfile -t udp_entries < <(printf '%s\n' "$nfq_opt" | grep -oE -- '--filter-udp=[^ ]+' | sed -E 's/^--filter-udp=//' || true)
 
+  # Also accept explicit NFQWS_PORTS_TCP / NFQWS_PORTS_UDP already present in config
+  tcp_var_val=""
+  udp_var_val=""
+  if grep -q '^NFQWS_PORTS_TCP=' "$file" 2>/dev/null; then
+    tcp_var_val=$(awk -F'=' '/^NFQWS_PORTS_TCP=/{s=$0; sub(/^NFQWS_PORTS_TCP="/,"",s); sub(/"$/,"",s); print s}' "$file" || true)
+    [ -n "$tcp_var_val" ] && tcp_entries+=("$tcp_var_val")
+  fi
+  if grep -q '^NFQWS_PORTS_UDP=' "$file" 2>/dev/null; then
+    udp_var_val=$(awk -F'=' '/^NFQWS_PORTS_UDP=/{s=$0; sub(/^NFQWS_PORTS_UDP="/,"",s); sub(/"$/,"",s); print s}' "$file" || true)
+    [ -n "$udp_var_val" ] && udp_entries+=("$udp_var_val")
+  fi
+
   normalize_list() {
     local s="$1"
+    # remove any characters except digits, commas and dashes (strip TCP%/UDP% artifacts)
     s="$(printf '%s' "$s" | sed -E 's/[^0-9,-]//g')"
     s="$(printf '%s' "$s" | sed -E 's/,+/,/g; s/^,//; s/,$//')"
     printf '%s' "$s"
@@ -186,16 +387,29 @@ apply_gamefilter_to_file() {
     done
   done
 
-  local gf_enabled=0
-  if [ -f "$GAMEFLAG_FILE" ]; then gf_enabled=1; fi
-
-  if [ "$gf_enabled" -eq 1 ]; then
-    seen_tcp["1024-65535"]=1
-    seen_udp["1024-65535"]=1
-  else
-    unset 'seen_tcp[1024-65535]'
-    unset 'seen_udp[1024-65535]'
+  local gf_mode="disabled"
+  if [ -f "$GAMEFLAG_FILE" ]; then
+    gf_mode=$(cat "$GAMEFLAG_FILE" | tr -d '\n' || echo "disabled")
   fi
+
+  case "$gf_mode" in
+    all)
+      seen_tcp["1024-65535"]=1
+      seen_udp["1024-65535"]=1
+      ;;
+    tcp)
+      seen_tcp["1024-65535"]=1
+      unset 'seen_udp[1024-65535]' 2>/dev/null || true
+      ;;
+    udp)
+      unset 'seen_tcp[1024-65535]' 2>/dev/null || true
+      seen_udp["1024-65535"]=1
+      ;;
+    *)
+      unset 'seen_tcp[1024-65535]' 2>/dev/null || true
+      unset 'seen_udp[1024-65535]' 2>/dev/null || true
+      ;;
+  esac
 
   build_list_from_assoc() {
     declare -n arr=$1
@@ -247,6 +461,10 @@ apply_gamefilter_to_file() {
 finalize_for_opt() {
   local tmp="$1"
 
+  # Remove TCP%/UDP% artifacts from converted Windows strategies
+  sudo sed -i 's/--filter-tcp=\([0-9,-]*\)TCP%/--filter-tcp=\1/g' "$tmp"
+  sudo sed -i 's/--filter-udp=\([0-9,-]*\)UDP%/--filter-udp=\1/g' "$tmp"
+
   sudo sed -i "s#\\\$ROOT_DIR/files#${OPT_REPO}/files#g" "$tmp"
   sudo sed -i "s#\\\$ROOT_DIR/lists#${OPT_REPO}/ipset#g" "$tmp"
   sudo sed -i "s#\\\$ROOT_DIR#${OPT_REPO}#g" "$tmp"
@@ -255,6 +473,15 @@ finalize_for_opt() {
   sudo sed -i 's/NFQWS_PORTS_UDP=""/NFQWS_PORTS_UDP=""/g' "$tmp"
   sudo sed -i 's/NFQWS_PORTS_TCP="\([^"]\)/NFQWS_PORTS_TCP="\1/g' "$tmp"
   sudo sed -i 's/NFQWS_PORTS_UDP="\([^"]\)/NFQWS_PORTS_UDP="\1/g' "$tmp"
+}
+
+sanitize_strategy_config() {
+  local cfg_file="$1"
+  # Clean up TCP%/UDP% artifacts from converted Windows strategies
+  if [ -f "$cfg_file" ]; then
+    sudo sed -i 's/--filter-tcp=\([0-9,-]*\)TCP%/--filter-tcp=\1/g' "$cfg_file"
+    sudo sed -i 's/--filter-udp=\([0-9,-]*\)UDP%/--filter-udp=\1/g' "$cfg_file"
+  fi
 }
 
 load_binaries() {
@@ -418,41 +645,55 @@ copy_missing_files_to_opt() {
 
 show_menu() {
   clear_screen
-  local gf_status="(выключен)"
-  if [ -f "$GAMEFLAG_FILE" ]; then gf_status="(включён)"; fi
+  
+  # Get game filter status
+  local gf_status="(отключен)"
+  if [ -f "$GAMEFLAG_FILE" ]; then
+    local gf_mode=$(cat "$GAMEFLAG_FILE" | tr -d '\n' || echo "disabled")
+    case "$gf_mode" in
+      all)
+        gf_status="(TCP и UDP)"
+        ;;
+      tcp)
+        gf_status="(только TCP)"
+        ;;
+      udp)
+        gf_status="(только UDP)"
+        ;;
+      *)
+        gf_status="(отключен)"
+        ;;
+    esac
+  fi
+
+  local ar_status="(выключена)"
+  if [ -f "$AUTORUN_FLAG" ]; then ar_status="(включена)"; fi
 
   cat <<MENU
 Выберите действие:
-1) Install strategies
-2) Convert strategies
-3) Remove service
+1) On/Off strategy
+2) Install strategies
+3) Convert strategies
 4) Status service
-5) Toggle game filter $gf_status
-6) Exit
+5) Toggle autorun $ar_status
+6) Toggle game filter $gf_status
+7) Exit
 MENU
   read -rp "Ваш выбор: " choice
   case "$choice" in
-    1) install_selected_strategy ;;
-    2) convert_strategies ;;
-    3) remove_service ;;
+    1) manage_strategy ;;
+    2) install_selected_strategy ;;
+    3) convert_strategies ;;
     4) service_status ;;
-    5) toggle_gamefilter ;;
-    6) clear_screen; echo "Выход."; exit 0 ;;
+    5) toggle_autorun ;;
+    6) toggle_gamefilter ;;
+    7) clear_screen; echo "Выход."; exit 0 ;;
     *) echo "Неверный выбор."; read -rp "Нажмите Enter...";;
   esac
 }
 
 
-remove_service() {
-  clear_screen
-  
-  if [ -x "$OPT_REPO/uninstall_easy.sh" ]; then
-    sudo bash "$OPT_REPO/uninstall_easy.sh"
-  else
-    echo "Предупреждение: uninstall_easy.sh не найден или не исполняемый в $OPT_REPO"
-    read -rp "Нажмите Enter для возврата в меню..."
-  fi
-}
+
 
 convert_strategies() {
   clear_screen
@@ -544,9 +785,29 @@ install_selected_strategy() {
   local selected_strategy="${strategies[$selected_idx]}"
   local cfg_src="$STRAT_DIR/$selected_strategy"
 
+  # Выбор с автозагрузкой или без
+  clear_screen
+  echo "Как установить стратегию?"
+  echo "1) С автозагрузкой"
+  echo "2) Без автозагрузки"
+  echo ""
+  
+  while true; do
+    read -rp "Выберите (1 или 2): " autorun_choice
+    if [[ "$autorun_choice" =~ ^[12]$ ]]; then
+      break
+    fi
+    echo "Неверный выбор. Введите 1 или 2."
+  done
+
+  if [ "$autorun_choice" -eq 1 ]; then
+    touch "$AUTORUN_FLAG"
+  fi
+
   echo "$selected_strategy" > "$REPO_ROOT/.active_strategy"
 
   sudo cp -a "$cfg_src" "$OPT_REPO/config"
+  sanitize_strategy_config "${OPT_REPO}/config"
 
   copy_missing_files_to_opt "${OPT_REPO}/config" || true
   apply_gamefilter_to_file "${OPT_REPO}/config" || true
