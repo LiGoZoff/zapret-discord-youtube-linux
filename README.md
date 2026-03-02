@@ -44,7 +44,7 @@ sudo bash /opt/zapret/ipset/create_ipset.sh
 
 Для того чтобы полностью удалить запрет, запустите Remove service в service.bat, после можно удалить папку запрета и папку /opt/zapret .
 
-С стратегиями general_Amazon*.bat можно поиграть в Dead by daylight, Fortnite и другие игры с EAC. Античит не будет жаловаться и начнет запускаться.
+С стратегиями general_Amazon*.bat можно поиграть в Dead by daylight, Fortnite и другие игры с EAC. Античит не будет жаловаться и начнет запускаться.(C EAC pаботают не только стратегии Amazon)
 **Не на все стратегии Amazon работает Game filter**
 
 В папку windows-strategies можно вставлять другие стратегии в формате general*.bat, но они могут не правильно конвертироваться и не работать.
