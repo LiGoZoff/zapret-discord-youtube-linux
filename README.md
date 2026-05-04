@@ -32,6 +32,7 @@ git clone https://github.com/LiGoZoff/zapret-windows-linux.git
     -  loaded - айпи проверяется на вхождение в список
     -  any - любой айпи попадает под фильтр
   - **`Update IPSet List`** - обновление ipset листа
+  
   **После переключения **`Toggle Game Filter`** или любого из **`Manage Files`** пункта требуется перезапуск стратегии.**
 
 
