@@ -22,7 +22,7 @@ git clone https://github.com/LiGoZoff/zapret-windows-linux.git
 - **`Convert strategies`** - происходит конвертация стратегий из папки windows-strategies формата general*.bat
 - **`Status Service`** - показывает состояние
 - **`Toggle autorun`** - включает/отключает автозагрузку активной стратегии
-- **`Toggle Game Filter`** - переключение режима обхода для игр (и других сервисов, использующих UDP и TCP на портах выше 1023). В скобках указан текущий статус.
+- **`Toggle Game Filter (status)`** - переключение режима обхода для игр (и других сервисов, использующих UDP и TCP на портах выше 1023).
 - **`Manage Files`** - пункт управления ipset и hosts файлами
   - **`Add/Remove records (status)`** - Добавляет/Убирает строки в файл hosts из локально файла hosts
   - **`Update locale file hosts`** - Обнавляет локальный файл hosts
