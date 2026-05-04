@@ -11,7 +11,7 @@ if "%~1"=="status_zapret" (
 if "%~1"=="check_updates" (
     if defined NO_UPDATE_CHECK exit /b
 
-    if exist "%~dp0..utils\check_updates.enabled" (
+    if exist "%~dp0utils\check_updates.enabled" (
         if not "%~2"=="soft" (
             start /b service check_updates soft
         ) else (
@@ -107,7 +107,7 @@ goto menu
 
 :: LOAD USER LISTS =====================
 :load_user_lists
-set "LISTS_PATH=%~dp0..lists\"
+set "LISTS_PATH=%~dp0lists\"
 
 if not exist "%LISTS_PATH%ipset-exclude-user.txt" (
     echo 203.0.113.113/32>"%LISTS_PATH%ipset-exclude-user.txt"
@@ -141,7 +141,7 @@ if !errorlevel!==0 (
 call :test_service zapret
 call :test_service WinDivert
 
-set "BIN_PATH=%~dp0..bin\"
+set "BIN_PATH=%~dp0bin\"
 if not exist "%BIN_PATH%\*.sys" (
     call :PrintRed "WinDivert64.sys file NOT found."
 )
@@ -222,9 +222,9 @@ cls
 chcp 437 > nul
 
 :: Main
-cd /d "%~dp0.."
-set "BIN_PATH=%~dp0..bin\"
-set "LISTS_PATH=%~dp0..lists\"
+cd /d "%~dp0"
+set "BIN_PATH=%~dp0bin\"
+set "LISTS_PATH=%~dp0lists\"
 
 :: Searching for .bat files in current folder, except files that start with "service"
 echo Pick one of the options:
@@ -290,13 +290,13 @@ for /f "tokens=*" %%a in ('type "!selectedFile!"') do (
                     if !errorlevel!==0 (
                         set "arg=\!QUOTE!!arg!\!QUOTE!"
                     ) else if "!arg:~0,1!"=="@" (
-                        set "arg=\!QUOTE!@%~dp0..!arg:~1!\!QUOTE!"
+                        set "arg=\!QUOTE!@%~dp0!arg:~1!\!QUOTE!"
                     ) else if "!arg:~0,5!"=="%%BIN%%" (
                         set "arg=\!QUOTE!!BIN_PATH!!arg:~5!\!QUOTE!"
                     ) else if "!arg:~0,7!"=="%%LISTS%%" (
                         set "arg=\!QUOTE!!LISTS_PATH!!arg:~7!\!QUOTE!"
                     ) else (
-                        set "arg=\!QUOTE!%~dp0..!arg!\!QUOTE!"
+                        set "arg=\!QUOTE!%~dp0!arg!\!QUOTE!"
                     )
                 ) else if "!arg:~0,12!" EQU "%%GameFilter%%" (
                     set "arg=%GameFilter%"
@@ -510,7 +510,7 @@ if !errorlevel!==0 (
 echo:
 
 :: WinDivert64.sys file
-set "BIN_PATH=%~dp0..bin\"
+set "BIN_PATH=%~dp0bin\"
 if not exist "%BIN_PATH%\*.sys" (
     call :PrintRed "WinDivert64.sys file NOT found."
     echo:
@@ -705,7 +705,7 @@ goto menu
 :game_switch_status
 chcp 437 > nul
 
-set "gameFlagFile=%~dp0..utils\game_filter.enabled"
+set "gameFlagFile=%~dp0utils\game_filter.enabled"
 
 if not exist "%gameFlagFile%" (
     set "GameFilterStatus=disabled"
@@ -780,7 +780,7 @@ goto menu
 :check_updates_switch_status
 chcp 437 > nul
 
-set "checkUpdatesFlag=%~dp0..utils\check_updates.enabled"
+set "checkUpdatesFlag=%~dp0utils\check_updates.enabled"
 
 if exist "%checkUpdatesFlag%" (
     set "CheckUpdatesStatus=enabled"
@@ -810,7 +810,7 @@ goto menu
 :ipset_switch_status
 chcp 437 > nul
 
-set "listFile=%~dp0..lists\ipset-all.txt"
+set "listFile=%~dp0lists\ipset-all.txt"
 for /f %%i in ('type "%listFile%" 2^>nul ^| find /c /v ""') do set "lineCount=%%i"
 
 if !lineCount!==0 (
@@ -830,7 +830,7 @@ exit /b
 chcp 437 > nul
 cls
 
-set "listFile=%~dp0..lists\ipset-all.txt"
+set "listFile=%~dp0lists\ipset-all.txt"
 set "backupFile=%listFile%.backup"
 
 if "%IPsetStatus%"=="loaded" (
@@ -877,7 +877,7 @@ goto menu
 chcp 437 > nul
 cls
 
-set "listFile=%~dp0..lists\ipset-all.txt"
+set "listFile=%~dp0lists\ipset-all.txt"
 set "url=https://raw.githubusercontent.com/Flowseal/zapret-discord-youtube/refs/heads/main/.service/ipset-service.txt"
 
 echo Updating ipset-all...
@@ -984,7 +984,7 @@ if %errorLevel% neq 0 (
 
 echo Starting configuration tests in PowerShell window...
 echo.
-start "" powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0..utils\test zapret.ps1"
+start "" powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0utils\test zapret.ps1"
 pause
 goto menu
 
@@ -1016,7 +1016,7 @@ exit /b 0
 :check_extracted
 set "extracted=1"
 
-if not exist "%~dp0..bin\" set "extracted=0"
+if not exist "%~dp0bin\" set "extracted=0"
 
 if "%extracted%"=="0" (
     echo Zapret must be extracted from archive first or bin folder not found for some reason
