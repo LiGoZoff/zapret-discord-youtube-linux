@@ -643,10 +643,153 @@ copy_missing_files_to_opt() {
   done
 }
 
+manage_files() {
+  while true; do
+    clear_screen
+
+    local local_hosts="$REPO_ROOT/.service/hosts"
+    local hosts_status="(none)"
+    if [ -f "$local_hosts" ]; then
+      local ips=$(awk '{print $1}' "$local_hosts" | sort | uniq)
+      local added=true
+      for ip in $ips; do
+        if ! grep -q "^$ip " /etc/hosts; then
+          added=false
+          break
+        fi
+      done
+      if [ "$added" = true ]; then
+        hosts_status="(loaded)"
+      fi
+    fi
+
+    local list_file="$REPO_ROOT/lists/ipset-all.txt"
+    local ipset_status="any"
+    if [ -f "$list_file" ]; then
+      local line_count=$(wc -l < "$list_file")
+      if [ "$line_count" -eq 0 ]; then
+        ipset_status="any"
+      elif grep -q "^203\.0\.113\.113/32$" "$list_file"; then
+        ipset_status="none"
+      else
+        ipset_status="loaded"
+      fi
+    fi
+
+    echo "Hosts:"
+    echo "  1) Add/Remove records $hosts_status"
+    echo "  2) Update locale file hosts"
+    echo ""
+    echo "IPSet:"
+    echo "  3) Toggle IPSet Filter ($ipset_status)"
+    echo "  4) Update IPSet List"
+    echo ""
+    echo "  5) Back"
+    echo ""
+
+    read -rp "Choose an option: " choice
+    case "$choice" in
+      1)
+        if [ ! -f "$local_hosts" ]; then
+          echo "Local hosts file not found. Please update it first."
+          read -rp "Press Enter..."
+          continue
+        fi
+        local ips=$(awk '{print $1}' "$local_hosts" | sort | uniq)
+        local added=true
+        for ip in $ips; do
+          if ! grep -q "^$ip " /etc/hosts; then
+            added=false
+            break
+          fi
+        done
+        if [ "$added" = true ]; then
+          for ip in $ips; do
+            sudo sed -i "/^$ip /d" /etc/hosts
+          done
+          echo "Records removed from /etc/hosts"
+        else
+          sudo sh -c "cat '$local_hosts' >> /etc/hosts"
+          echo "Records added to /etc/hosts"
+        fi
+        read -rp "Press Enter..."
+        ;;
+      2)
+        mkdir -p "$REPO_ROOT/.service"
+        local hosts_url="https://raw.githubusercontent.com/Flowseal/zapret-discord-youtube/refs/heads/main/.service/hosts"
+        if curl -L -o "$local_hosts" "$hosts_url"; then
+          echo "Local hosts file updated: $local_hosts"
+        else
+          echo "Failed to download hosts file"
+        fi
+        read -rp "Press Enter..."
+        ;;
+      3)
+        local backup_file="$list_file.backup"
+        mkdir -p "$REPO_ROOT/lists"
+        if [ "$ipset_status" = "loaded" ]; then
+          echo "Switching to none..."
+          if [ ! -f "$backup_file" ]; then
+            mv "$list_file" "$backup_file"
+          fi
+          echo "203.0.113.113/32" > "$list_file"
+          echo "Mode switched to none"
+        elif [ "$ipset_status" = "none" ]; then
+          echo "Switching to any..."
+          > "$list_file"
+          echo "Mode switched to any"
+        elif [ "$ipset_status" = "any" ]; then
+          echo "Switching to loaded..."
+          if [ -f "$backup_file" ]; then
+            mv "$backup_file" "$list_file"
+            echo "Mode switched to loaded (from backup)"
+          else
+            echo "Error: No backup available for restoration. Please update the list first."
+          fi
+        fi
+        read -rp "Press Enter..."
+        ;;
+      4)
+        echo "Updating IPSet list..."
+        local url="https://raw.githubusercontent.com/Flowseal/zapret-discord-youtube/refs/heads/main/.service/ipset-service.txt"
+        local backup_file="$list_file.backup"
+        mkdir -p "$REPO_ROOT/lists"
+
+        local mode_changed=false
+        if [ "$ipset_status" != "loaded" ]; then
+          if [ -f "$backup_file" ]; then
+            mv "$backup_file" "$list_file"
+          else
+            : > "$list_file"
+          fi
+          mode_changed=true
+        fi
+
+        if curl -L -o "$list_file" "$url"; then
+          if [ "$mode_changed" = true ]; then
+            echo "Список IPSet обновлен. Режим переключен на loaded."
+          else
+            echo "Список IPSet обновлен."
+          fi
+        else
+          echo "Не удалось скачать список IPSet"
+        fi
+        read -rp "Нажмите Enter..."
+        ;;
+      5)
+        break
+        ;;
+      *)
+        echo "Неверный выбор."
+        read -rp "Нажмите Enter..."
+        ;;
+    esac
+  done
+}
+
 show_menu() {
   clear_screen
-  
-  # Get game filter status
+
   local gf_status="(отключен)"
   if [ -f "$GAMEFLAG_FILE" ]; then
     local gf_mode=$(cat "$GAMEFLAG_FILE" | tr -d '\n' || echo "disabled")
@@ -677,7 +820,8 @@ show_menu() {
 4) Status service
 5) Toggle autorun $ar_status
 6) Toggle game filter $gf_status
-7) Exit
+7) Manage Files
+8) Exit
 MENU
   read -rp "Ваш выбор: " choice
   case "$choice" in
@@ -687,7 +831,8 @@ MENU
     4) service_status ;;
     5) toggle_autorun ;;
     6) toggle_gamefilter ;;
-    7) clear_screen; echo "Выход."; exit 0 ;;
+    7) manage_files ;;
+    8) clear_screen; echo "Выход."; exit 0 ;;
     *) echo "Неверный выбор."; read -rp "Нажмите Enter...";;
   esac
 }
