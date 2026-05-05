@@ -24,6 +24,7 @@ git clone https://github.com/LiGoZoff/zapret-windows-linux.git
 - **`Toggle autorun`** - включает/отключает автозагрузку активной стратегии
 - **`Toggle Game Filter`** - переключение режима обхода для игр (и других сервисов, использующих UDP и TCP на портах выше 1023). В скобках указан текущий статус.
 - **`Manage Files`** - пункт управления ipset и hosts файлами
+  - **`Check for updates`** - проверяет на наличие обновлений и обновляет при необходимости
   - **`Add/Remove records (status)`** - Добавляет/Убирает строки в файл hosts из локально файла hosts
   - **`Update locale file hosts`** - Обнавляет локальный файл hosts
   - **`Toggle IPSet Filter (status)`** - переключение режима обхода сервисов из ipset-all.txt.
@@ -32,6 +33,7 @@ git clone https://github.com/LiGoZoff/zapret-windows-linux.git
     -  loaded - айпи проверяется на вхождение в список
     -  any - любой айпи попадает под фильтр
   - **`Update IPSet List`** - обновление ipset листа
+- **`Remove Zapret`** - полностью удаляет запрет
   
 **После переключения **`Toggle Game Filter`** или любого пункта из **`Manage Files`** требуется перезапуск стратегии.**
 

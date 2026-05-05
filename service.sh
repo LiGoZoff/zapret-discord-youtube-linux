@@ -7,6 +7,8 @@ CONVERT_SCRIPT="$REPO_ROOT/linux-strategies/convert-strategies.sh"
 STRAT_DIR="$REPO_ROOT/linux-strategies"
 GAMEFLAG_FILE="$REPO_ROOT/.gamefilter_mode"
 AUTORUN_FLAG="$REPO_ROOT/.autorun_enabled"
+LOCAL_VERSION_FILE="$REPO_ROOT/.service/version.txt"
+LOCAL_VERSION=$(cat "$LOCAL_VERSION_FILE" 2>/dev/null || echo "unknown")
 
 OPT_REPO="/opt/zapret"
 
@@ -91,6 +93,80 @@ toggle_autorun() {
   fi
   echo ""
   read -rp "Нажмите Enter для возврата в меню..."
+}
+
+check_for_updates() {
+  clear_screen
+  echo "Проверка обновлений..."
+
+  local GITHUB_VERSION_URL="https://raw.githubusercontent.com/LiGoZoff/zapret-discord-youtube-linux/main/.service/version.txt"
+  local GITHUB_RELEASE_URL="https://github.com/LiGoZoff/zapret-discord-youtube-linux/releases/tag/"
+  local GITHUB_DOWNLOAD_URL="https://github.com/LiGoZoff/zapret-discord-youtube-linux/releases/latest"
+
+  local GITHUB_VERSION
+  if ! GITHUB_VERSION=$(curl -s --max-time 10 "$GITHUB_VERSION_URL" | tr -d '\n' | tr -d '\r'); then
+    echo "Предупреждение: не удалось получить последнюю версию. Это не влияет на работу zapret."
+    read -rp "Нажмите Enter для возврата в меню..."
+    return
+  fi
+
+  if [ "$LOCAL_VERSION" = "$GITHUB_VERSION" ]; then
+    echo "Установлена последняя версия: $LOCAL_VERSION"
+    read -rp "Нажмите Enter для возврата в меню..."
+    return
+  fi
+
+  echo "Текущая версия: $LOCAL_VERSION"
+  echo "Доступна новая версия: $GITHUB_VERSION"
+  echo "Страница релиза: $GITHUB_RELEASE_URL$GITHUB_VERSION"
+  echo ""
+  read -rp "Обновить сейчас? (y/N): " update_confirm
+  if [[ ! "$update_confirm" =~ ^[Yy]$ ]]; then
+    echo "Обновление отменено."
+    read -rp "Нажмите Enter для возврата в меню..."
+    return
+  fi
+
+  echo "Обновление..."
+  if git -C "$REPO_ROOT" pull --rebase; then
+    echo "Обновление завершено успешно."
+    LOCAL_VERSION=$(cat "$LOCAL_VERSION_FILE" 2>/dev/null || echo "unknown")
+    echo "Новая версия: $LOCAL_VERSION"
+  else
+    echo "Ошибка при обновлении. Попробуйте вручную."
+  fi
+
+  read -rp "Нажмите Enter для возврата в меню..."
+}
+
+delete_zapret() {
+  clear_screen
+  echo "ВНИМАНИЕ: Это действие полностью удалит zapret!"
+  echo "Будут удалены:"
+  echo "  - /opt/zapret"
+  echo "  - Текущая директория zapret ($REPO_ROOT)"
+  echo ""
+  read -rp "Вы уверены? (y/N): " confirm
+  if [[ "$confirm" =~ ^[Yy]$ ]]; then
+    echo "Удаление zapret..."
+
+    if sudo systemctl is-active --quiet zapret.service 2>/dev/null; then
+      sudo systemctl stop zapret.service
+      sudo systemctl disable zapret.service
+    fi
+
+    sudo rm -rf /opt/zapret
+
+    cd /
+    rm -rf "$REPO_ROOT"
+
+    echo "Zapret полностью удален."
+    echo "Выход."
+    exit 0
+  else
+    echo "Удаление отменено."
+    read -rp "Нажмите Enter для возврата в меню..."
+  fi
 }
 
 service_status() {
@@ -676,19 +752,25 @@ manage_files() {
       fi
     fi
 
+    echo "Updates:"
+    echo "  1) Check for Updates"
+    echo ""
     echo "Hosts:"
-    echo "  1) Add/Remove records $hosts_status"
-    echo "  2) Update locale file hosts"
+    echo "  2) Add/Remove records $hosts_status"
+    echo "  3) Update locale file hosts"
     echo ""
     echo "IPSet:"
-    echo "  3) Toggle IPSet Filter ($ipset_status)"
-    echo "  4) Update IPSet List"
+    echo "  4) Toggle IPSet Filter ($ipset_status)"
+    echo "  5) Update IPSet List"
     echo ""
-    echo "  5) Back"
+    echo "  6) Back"
     echo ""
 
     read -rp "Choose an option: " choice
     case "$choice" in
+      0)
+        check_for_updates
+        ;;
       1)
         if [ ! -f "$local_hosts" ]; then
           echo "Local hosts file not found. Please update it first."
@@ -822,6 +904,8 @@ show_menu() {
 6) Toggle game filter $gf_status
 7) Manage Files
 8) Exit
+
+0) Delete Zapret
 MENU
   read -rp "Ваш выбор: " choice
   case "$choice" in
@@ -833,6 +917,7 @@ MENU
     6) toggle_gamefilter ;;
     7) manage_files ;;
     8) clear_screen; echo "Выход."; exit 0 ;;
+    0) delete_zapret ;;
     *) echo "Неверный выбор."; read -rp "Нажмите Enter...";;
   esac
 }
@@ -929,8 +1014,6 @@ install_selected_strategy() {
   local selected_idx=$((strat_choice-1))
   local selected_strategy="${strategies[$selected_idx]}"
   local cfg_src="$STRAT_DIR/$selected_strategy"
-
-  # Выбор с автозагрузкой или без
   clear_screen
   echo "Как установить стратегию?"
   echo "1) С автозагрузкой"
