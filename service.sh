@@ -768,10 +768,10 @@ manage_files() {
 
     read -rp "Choose an option: " choice
     case "$choice" in
-      0)
+      1)
         check_for_updates
         ;;
-      1)
+      2)
         if [ ! -f "$local_hosts" ]; then
           echo "Local hosts file not found. Please update it first."
           read -rp "Press Enter..."
@@ -796,7 +796,7 @@ manage_files() {
         fi
         read -rp "Press Enter..."
         ;;
-      2)
+      3)
         mkdir -p "$REPO_ROOT/.service"
         local hosts_url="https://raw.githubusercontent.com/Flowseal/zapret-discord-youtube/refs/heads/main/.service/hosts"
         if curl -L -o "$local_hosts" "$hosts_url"; then
@@ -806,7 +806,7 @@ manage_files() {
         fi
         read -rp "Press Enter..."
         ;;
-      3)
+      4)
         local backup_file="$list_file.backup"
         mkdir -p "$REPO_ROOT/lists"
         if [ "$ipset_status" = "loaded" ]; then
@@ -831,7 +831,7 @@ manage_files() {
         fi
         read -rp "Press Enter..."
         ;;
-      4)
+      5)
         echo "Updating IPSet list..."
         local url="https://raw.githubusercontent.com/Flowseal/zapret-discord-youtube/refs/heads/main/.service/ipset-service.txt"
         local backup_file="$list_file.backup"
@@ -858,7 +858,7 @@ manage_files() {
         fi
         read -rp "Нажмите Enter..."
         ;;
-      5)
+      6)
         break
         ;;
       *)
