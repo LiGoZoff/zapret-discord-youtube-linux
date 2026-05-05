@@ -128,12 +128,34 @@ check_for_updates() {
   fi
 
   echo "Обновление..."
+  local stashed=false
+  if ! git -C "$REPO_ROOT" diff --quiet || ! git -C "$REPO_ROOT" diff --cached --quiet; then
+    echo "Сохранение локальных изменений..."
+    if git -C "$REPO_ROOT" stash push -m "Auto-stash before update"; then
+      stashed=true
+      echo "Изменения сохранены."
+    else
+      echo "Не удалось сохранить изменения. Обновление отменено."
+      read -rp "Нажмите Enter для возврата в меню..."
+      return
+    fi
+  fi
+
   if git -C "$REPO_ROOT" pull --rebase; then
     echo "Обновление завершено успешно."
     LOCAL_VERSION=$(cat "$LOCAL_VERSION_FILE" 2>/dev/null || echo "unknown")
     echo "Новая версия: $LOCAL_VERSION"
   else
     echo "Ошибка при обновлении. Попробуйте вручную."
+  fi
+
+  if [ "$stashed" = true ]; then
+    echo "Восстановление локальных изменений..."
+    if git -C "$REPO_ROOT" stash pop; then
+      echo "Изменения восстановлены."
+    else
+      echo "Не удалось восстановить изменения автоматически. Проверьте конфликты вручную."
+    fi
   fi
 
   read -rp "Нажмите Enter для возврата в меню..."
@@ -537,7 +559,6 @@ apply_gamefilter_to_file() {
 finalize_for_opt() {
   local tmp="$1"
 
-  # Remove TCP%/UDP% artifacts from converted Windows strategies
   sudo sed -i 's/--filter-tcp=\([0-9,-]*\)TCP%/--filter-tcp=\1/g' "$tmp"
   sudo sed -i 's/--filter-udp=\([0-9,-]*\)UDP%/--filter-udp=\1/g' "$tmp"
 
@@ -577,7 +598,6 @@ load_binaries() {
 
   sudo mkdir -p "$files_fake_dir" "$ipset_dir"
 
-  # copy all lists
   if [ -d "${REPO_ROOT}/lists" ]; then
     for src_list in "${REPO_ROOT}/lists"/*.txt; do
       [ -f "$src_list" ] || continue
