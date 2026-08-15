@@ -18,7 +18,7 @@ git clone https://github.com/LiGoZoff/zapret-windows-linux.git
 `Service.sh` (адаптированный под линукс service.bat из [zapret-discord-youtube](https://github.com/Flowseal/zapret-discord-youtube))
 
 - **`On/Off strategy`** - запускает последнюю активную стретегию/отключает стратегию с удалением из автозагрузки
-- **`Install Service`** - производится установка уже сконвертированных стратегий, установка стратегии происходит через /opt/[[https://github.com/bol-van/zapret|zapret/]]
+- **`Install Service`** - производится установка уже сконвертированных стратегий, установка стратегии происходит через /opt/[zapret/](https://github.com/bol-van/zapret)
 - **`Convert strategies`** - происходит конвертация стратегий из папки windows-strategies формата general*.bat
 - **`Status Service`** - показывает состояние
 - **`Toggle autorun`** - включает/отключает автозагрузку активной стратегии
