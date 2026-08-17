@@ -9,187 +9,9 @@ GAMEFLAG_FILE="$REPO_ROOT/.gamefilter_mode"
 AUTORUN_FLAG="$REPO_ROOT/.autorun_enabled"
 LOCAL_VERSION_FILE="$REPO_ROOT/.service/version.txt"
 LOCAL_VERSION=$(cat "$LOCAL_VERSION_FILE" 2>/dev/null || echo "unknown")
-
 OPT_REPO="/opt/zapret"
 
 clear_screen() { printf '\033c'; }
-
-ensure_user_lists() {
-  mkdir -p "$REPO_ROOT/lists"
-  local list
-  for list in ipset-exclude-user.txt list-general-user.txt list-exclude-user.txt; do
-    if [ ! -f "$REPO_ROOT/lists/$list" ]; then
-      case "$list" in
-        ipset-exclude-user.txt)
-          printf '203.0.113.113/32\n' > "$REPO_ROOT/lists/$list"
-          ;;
-        *)
-          : > "$REPO_ROOT/lists/$list"
-          ;;
-      esac
-    fi
-  done
-}
-
-ensure_user_lists
-
-ensure_convert() {
-  if [ ! -x "$CONVERT_SCRIPT" ]; then
-    if [ -f "$CONVERT_SCRIPT" ]; then
-      sudo chmod +x "$CONVERT_SCRIPT"
-    else
-      echo "Конвертер не найден: $CONVERT_SCRIPT" >&2
-      return 1
-    fi
-  fi
-  return 0
-}
-
-toggle_gamefilter() {
-  clear_screen
-  echo "Выберите режим game filter:" 
-  echo "  0. Отключить"
-  echo "  1. TCP и UDP"
-  echo "  2. Только TCP"
-  echo "  3. Только UDP"
-  echo ""
-  
-  local gf_choice="0"
-  read -rp "Выберите опцию (0-3, по умолчанию: 0): " gf_choice
-  [ -z "$gf_choice" ] && gf_choice="0"
-
-  case "$gf_choice" in
-    0)
-      rm -f "$GAMEFLAG_FILE"
-      ;;
-    1)
-      printf "all\n" > "$GAMEFLAG_FILE"
-      ;;
-    2)
-      printf "tcp\n" > "$GAMEFLAG_FILE"
-      ;;
-    3)
-      printf "udp\n" > "$GAMEFLAG_FILE"
-      ;;
-    *)
-      echo "Неверный выбор."
-      read -rp "Нажмите Enter для возврата в меню..."
-      return
-      ;;
-  esac
-
-  echo "Перезагрузите zapret для применения изменений"
-  read -rp "Нажмите Enter для возврата в меню..."
-}
-
-toggle_autorun() {
-  clear_screen
-  if [ -f "$AUTORUN_FLAG" ]; then
-    rm -f "$AUTORUN_FLAG"
-    echo "Автозагрузка отключена."
-  else
-    touch "$AUTORUN_FLAG"
-    echo "Автозагрузка включена."
-  fi
-  echo ""
-  read -rp "Нажмите Enter для возврата в меню..."
-}
-
-check_for_updates() {
-  clear_screen
-  echo "Проверка обновлений..."
-
-  local GITHUB_VERSION_URL="https://raw.githubusercontent.com/LiGoZoff/zapret-discord-youtube-linux/main/.service/version.txt"
-  local GITHUB_RELEASE_URL="https://github.com/LiGoZoff/zapret-discord-youtube-linux/releases/tag/"
-  local GITHUB_DOWNLOAD_URL="https://github.com/LiGoZoff/zapret-discord-youtube-linux/releases/latest"
-
-  local GITHUB_VERSION
-  if ! GITHUB_VERSION=$(curl -s --max-time 10 "$GITHUB_VERSION_URL" | tr -d '\n' | tr -d '\r'); then
-    echo "Предупреждение: не удалось получить последнюю версию. Это не влияет на работу zapret."
-    read -rp "Нажмите Enter для возврата в меню..."
-    return
-  fi
-
-  if [ "$LOCAL_VERSION" = "$GITHUB_VERSION" ]; then
-    echo "Установлена последняя версия: $LOCAL_VERSION"
-    read -rp "Нажмите Enter для возврата в меню..."
-    return
-  fi
-
-  echo "Текущая версия: $LOCAL_VERSION"
-  echo "Доступна новая версия: $GITHUB_VERSION"
-  echo "Страница релиза: $GITHUB_RELEASE_URL$GITHUB_VERSION"
-  echo ""
-  read -rp "Обновить сейчас? (y/N): " update_confirm
-  if [[ ! "$update_confirm" =~ ^[Yy]$ ]]; then
-    echo "Обновление отменено."
-    read -rp "Нажмите Enter для возврата в меню..."
-    return
-  fi
-
-  echo "Обновление..."
-  local stashed=false
-  if ! git -C "$REPO_ROOT" diff --quiet || ! git -C "$REPO_ROOT" diff --cached --quiet; then
-    echo "Сохранение локальных изменений..."
-    if git -C "$REPO_ROOT" stash push -m "Auto-stash before update"; then
-      stashed=true
-      echo "Изменения сохранены."
-    else
-      echo "Не удалось сохранить изменения. Обновление отменено."
-      read -rp "Нажмите Enter для возврата в меню..."
-      return
-    fi
-  fi
-
-  if git -C "$REPO_ROOT" pull --rebase; then
-    echo "Обновление завершено успешно."
-    LOCAL_VERSION=$(cat "$LOCAL_VERSION_FILE" 2>/dev/null || echo "unknown")
-    echo "Новая версия: $LOCAL_VERSION"
-  else
-    echo "Ошибка при обновлении. Попробуйте вручную."
-  fi
-
-  if [ "$stashed" = true ]; then
-    echo "Восстановление локальных изменений..."
-    if git -C "$REPO_ROOT" stash pop; then
-      echo "Изменения восстановлены."
-    else
-      echo "Не удалось восстановить изменения автоматически. Проверьте конфликты вручную."
-    fi
-  fi
-
-  read -rp "Нажмите Enter для возврата в меню..."
-}
-
-delete_zapret() {
-  clear_screen
-  echo "ВНИМАНИЕ: Это действие полностью удалит zapret!"
-  echo "Будут удалены:"
-  echo "  - /opt/zapret"
-  echo "  - Текущая директория zapret ($REPO_ROOT)"
-  echo ""
-  read -rp "Вы уверены? (y/N): " confirm
-  if [[ "$confirm" =~ ^[Yy]$ ]]; then
-    echo "Удаление zapret..."
-
-    if sudo systemctl is-active --quiet zapret.service 2>/dev/null; then
-      sudo systemctl stop zapret.service
-      sudo systemctl disable zapret.service
-    fi
-
-    sudo rm -rf /opt/zapret
-
-    cd /
-    rm -rf "$REPO_ROOT"
-
-    echo "Zapret полностью удален."
-    echo "Выход."
-    exit 0
-  else
-    echo "Удаление отменено."
-    read -rp "Нажмите Enter для возврата в меню..."
-  fi
-}
 
 service_status() {
   clear_screen
@@ -235,6 +57,82 @@ service_status() {
   echo ""
   
   read -rp "Нажмите Enter для возврата в меню..."
+}
+
+ensure_convert() {
+  if [ ! -x "$CONVERT_SCRIPT" ]; then
+    if [ -f "$CONVERT_SCRIPT" ]; then
+      sudo chmod +x "$CONVERT_SCRIPT"
+    else
+      echo "Конвертер не найден: $CONVERT_SCRIPT" >&2
+      return 1
+    fi
+  fi
+  return 0
+}
+
+ensure_sudo() {
+  if [ "$(id -u)" -ne 0 ]; then
+    if sudo -v 2>/dev/null; then
+      clear_screen
+    else
+      clear_screen
+    fi
+  fi
+}
+
+ipset_get_status() {
+  local lf="$REPO_ROOT/lists/ipset-all.txt"
+  if [ ! -f "$lf" ]; then
+    printf '%s' "any"
+    return
+  fi
+
+  local cnt
+  cnt=$(grep -v '^[[:space:]]*$' "$lf" | grep -v '^#' | wc -l 2>/dev/null || echo 0)
+
+  cnt="$(printf '%s' "$cnt" | tr -cd '0-9')"
+  if [ -z "$cnt" ]; then cnt=0; fi
+  if [ "$cnt" -eq 0 ]; then
+    printf '%s' "any"
+    return
+  fi
+  if [ "$cnt" -eq 1 ]; then
+    local first
+    first=$(grep -v '^[[:space:]]*$' "$lf" | grep -v '^#' | head -n1 | tr -d '\r' || true)
+    if [ "$first" = "203.0.113.113/32" ]; then
+      printf '%s' "none"
+      return
+    fi
+  fi
+  
+  if [ -f "$REPO_ROOT/lists/ipset-all.txt.backup" ]; then
+  
+    if grep -q "^203\.0\.113\.113/32$" "$lf" 2>/dev/null && [ $(grep -v '^[[:space:]]*$' "$lf" | grep -v '^#' | wc -l 2>/dev/null || echo 0) -le 1 ]; then
+      printf '%s' "none"
+      return
+    fi
+  fi
+  printf '%s' "loaded"
+}
+
+check_update_available() {
+  local local_v remote_v url
+  local_v=$(cat "$REPO_ROOT/.service/version.txt" 2>/dev/null || echo "")
+  local_v="$(printf '%s' "$local_v" | tr -d '\r\n')"
+
+  url="https://raw.githubusercontent.com/LiGoZoff/zapret-discord-youtube-linux/refs/heads/main/.service/version.txt"
+  remote_v=$(curl -fsSL "$url" 2>/dev/null || echo "")
+  remote_v="$(printf '%s' "$remote_v" | tr -d '\r\n')"
+
+  if [ -z "$remote_v" ]; then
+    return 1
+  fi
+
+  if [ "$local_v" != "$remote_v" ]; then
+    return 0
+  fi
+  return 1
 }
 
 manage_strategy() {
@@ -313,7 +211,7 @@ _reinstall_strategy() {
   finalize_for_opt "${OPT_REPO}/config" || true
 
   if [ -x "$OPT_REPO/install_easy.sh" ]; then
-    sudo bash "$OPT_REPO/install_easy.sh" || {
+    sudo bash -c "yes '' | bash '$OPT_REPO/install_easy.sh'" || {
       echo "Ошибка при запуске install_easy.sh"
       read -rp "Нажмите Enter..."
       return
@@ -327,20 +225,89 @@ _reinstall_strategy() {
 }
 
 _uninstall_strategy() {
-  if [ -x "$OPT_REPO/uninstall_easy.sh" ]; then
-    sudo bash "$OPT_REPO/uninstall_easy.sh"
-    rm -f "$AUTORUN_FLAG"
-    echo "Стратегия удалена."
-    read -rp "Нажмите Enter для возврата в меню..."
+  if sudo systemctl is-active --quiet zapret.service 2>/dev/null; then
+    sudo systemctl stop zapret.service
+    sudo systemctl disable zapret.service
+    echo "Сервис zapret остановлен."
   else
-    echo "Предупреждение: uninstall_easy.sh не найден или не исполняемый в $OPT_REPO"
-    read -rp "Нажмите Enter для возврата в меню..."
+    echo "Сервис уже выключен."
   fi
+  rm -f "$AUTORUN_FLAG"
+  read -rp "Нажмите Enter для возврата в меню..."
+}
+
+delete_zapret() {
+  clear_screen
+  read -rp "Вы уверены, что хотите полностью удалить Zapret и все изменения? (y/N): " confirm
+  case "$confirm" in
+    y|Y) ;;
+    *) echo "Отмена."; read -rp "Нажмите Enter..."; return ;;
+  esac
+
+  echo "Останавливаю и отключаю службу zapret.service (если активна)..."
+  if sudo systemctl is-active --quiet zapret.service 2>/dev/null; then
+    sudo systemctl stop zapret.service || true
+  fi
+  sudo systemctl disable zapret.service 2>/dev/null || true
+
+  echo "Удаляю unit-файл и перезагружаю демон systemd..."
+  sudo rm -f /etc/systemd/system/zapret.service || true
+  sudo systemctl daemon-reload || true
+
+  echo "Восстанавливаю /etc/hosts из бэкапа, если он есть..."
+  if [ -f "/etc/hosts.zapret.bak" ]; then
+    sudo cp -f /etc/hosts.zapret.bak /etc/hosts || true
+    sudo rm -f /etc/hosts.zapret.bak || true
+  fi
+
+  echo "Удаляю локальные флаги и временные файлы..."
+  sudo rm -f "$REPO_ROOT/.active_strategy" || true
+  sudo rm -f "$AUTORUN_FLAG" || true
+  sudo rm -f "$GAMEFLAG_FILE" || true
+  sudo rm -f "$REPO_ROOT/results.txt" || true
+
+  list_file="$REPO_ROOT/lists/ipset-all.txt"
+  backup_file="$list_file.backup"
+  mkdir -p "$(dirname "$list_file")"
+  if [ -f "$list_file" ]; then
+    if grep -q "^203\.0\.113\.113/32$" "$list_file" 2>/dev/null; then
+      :
+    else
+      if [ ! -f "$backup_file" ]; then
+        sudo mv -f "$list_file" "$backup_file" || sudo cp -a "$list_file" "$backup_file" || true
+      else
+        sudo cp -a "$list_file" "${backup_file}.$(date +%s)" || true
+      fi
+      printf '%s\n' "203.0.113.113/32" | sudo tee "$list_file" >/dev/null || true
+    fi
+  else
+    printf '%s\n' "203.0.113.113/32" | sudo tee "$list_file" >/dev/null || true
+  fi
+
+  echo "Очищаю папку linux-strategies (оставляю пустой каталог)..."
+  if [ -d "$STRAT_DIR" ]; then
+    converter_name=$(basename "$CONVERT_SCRIPT")
+    shopt -s nullglob dotglob
+    for p in "$STRAT_DIR"/*; do
+      [ -e "$p" ] || continue
+      name=$(basename "$p")
+      if [ "$name" != "$converter_name" ]; then
+        sudo rm -rf "$p" || true
+      fi
+    done
+    shopt -u nullglob dotglob || true
+  fi
+
+  echo "Удаляю каталог /opt/zapret (если есть)..."
+  sudo rm -rf "$OPT_REPO" || true
+
+  echo "Все связанные системные изменения удалены. Можно безопасно удалить локальную папку репозитория, если нужно."
+  read -rp "Нажмите Enter..."
+  exit 0
 }
 
 clone_opt_repo_if_needed() {
   if [ -d "$OPT_REPO" ]; then
-    echo "/opt/zapret уже существует — распаковка не требуется."
     return 0
   fi
 
@@ -391,14 +358,14 @@ clone_opt_repo_if_needed() {
   echo "Запускаю скрипты установки..."
   if [ -x "$OPT_REPO/install_prereq.sh" ]; then
     echo "Запускаю install_prereq.sh ..."
-    sudo bash "$OPT_REPO/install_prereq.sh" || true
+     sudo bash -c "yes '' | bash '$OPT_REPO/install_prereq.sh'" || true
   else
     echo "Предупреждение: install_prereq.sh не найден или не исполняемый"
   fi
 
   if [ -x "$OPT_REPO/install_bin.sh" ]; then
     echo "Запускаю install_bin.sh ..."
-    sudo bash "$OPT_REPO/install_bin.sh" || true
+     sudo bash -c "yes '' | bash '$OPT_REPO/install_bin.sh'" || true
   else
     echo "Предупреждение: install_bin.sh не найден или не исполняемый"
   fi
@@ -442,7 +409,6 @@ apply_gamefilter_to_file() {
   mapfile -t tcp_entries < <(printf '%s\n' "$nfq_opt" | grep -oE -- '--filter-tcp=[^ ]+' | sed -E 's/^--filter-tcp=//' || true)
   mapfile -t udp_entries < <(printf '%s\n' "$nfq_opt" | grep -oE -- '--filter-udp=[^ ]+' | sed -E 's/^--filter-udp=//' || true)
 
-  # Also accept explicit NFQWS_PORTS_TCP / NFQWS_PORTS_UDP already present in config
   tcp_var_val=""
   udp_var_val=""
   if grep -q '^NFQWS_PORTS_TCP=' "$file" 2>/dev/null; then
@@ -456,7 +422,6 @@ apply_gamefilter_to_file() {
 
   normalize_list() {
     local s="$1"
-    # remove any characters except digits, commas and dashes (strip TCP%/UDP% artifacts)
     s="$(printf '%s' "$s" | sed -E 's/[^0-9,-]//g')"
     s="$(printf '%s' "$s" | sed -E 's/,+/,/g; s/^,//; s/,$//')"
     printf '%s' "$s"
@@ -574,7 +539,6 @@ finalize_for_opt() {
 
 sanitize_strategy_config() {
   local cfg_file="$1"
-  # Clean up TCP%/UDP% artifacts from converted Windows strategies
   if [ -f "$cfg_file" ]; then
     sudo sed -i 's/--filter-tcp=\([0-9,-]*\)TCP%/--filter-tcp=\1/g' "$cfg_file"
     sudo sed -i 's/--filter-udp=\([0-9,-]*\)UDP%/--filter-udp=\1/g' "$cfg_file"
@@ -617,7 +581,6 @@ load_binaries() {
     done
   fi
 
-  # copy all .bin files
   if [ -d "${REPO_ROOT}/bin" ]; then
     for src_bin in "${REPO_ROOT}/bin"/*.bin; do
       [ -f "$src_bin" ] || continue
@@ -739,152 +702,332 @@ copy_missing_files_to_opt() {
   done
 }
 
-manage_files() {
+utilities_menu() {
   while true; do
     clear_screen
+    echo "Utilities:"
+    echo "  1) Конвертация стратегий"
+    echo "  2) Тест стратегий (полный)"
+    echo "  3) Тест стратегий (быстро)"
+    echo "  4) Back"
+    echo ""
+    read -rp "Выберите опцию: " uchoice
+    case "$uchoice" in
+      1)
+        convert_strategies ;;
+      2)
+        clear_screen
+        if [ "$(id -u)" -ne 0 ]; then
+          sudo bash "$REPO_ROOT/utils/checker.sh" interactive
+        else
+          bash "$REPO_ROOT/utils/checker.sh" interactive
+        fi
+        read -rp "Нажмите Enter для возврата..." ;;
+      3)
+        clear_screen
+        if [ "$(id -u)" -ne 0 ]; then
+          sudo bash "$REPO_ROOT/utils/checker.sh" fast
+        else
+          bash "$REPO_ROOT/utils/checker.sh" fast
+        fi
+        read -rp "Нажмите Enter для возврата..." ;;
+      4) return ;;
+      *) echo "Неверный выбор."; read -rp "Нажмите Enter..." ;;
+    esac
+  done
+}
 
-    local local_hosts="$REPO_ROOT/.service/hosts"
-    local hosts_status="(none)"
-    if [ -f "$local_hosts" ]; then
-      local ips=$(awk '{print $1}' "$local_hosts" | sort | uniq)
+settings_menu() {
+  while true; do
+    clear_screen
+    local autorun_state="(выключена)"
+    if [ -f "$AUTORUN_FLAG" ]; then autorun_state="(включена)"; fi
+
+    local gf_state="(отключен)"
+    if [ -f "$GAMEFLAG_FILE" ]; then
+      gf_content=$(cat "$GAMEFLAG_FILE" 2>/dev/null || echo "")
+      case "$gf_content" in
+        all) gf_state="(включен - TCP и UDP)" ;;
+        tcp) gf_state="(включен - только TCP)" ;;
+        udp) gf_state="(включен - только UDP)" ;;
+        *) gf_state="(отключен)" ;;
+      esac
+    fi
+
+    local ipset_state="($(ipset_get_status))"
+
+    local hosts_state="(выключен)"
+    if [ -f "$REPO_ROOT/.service/hosts" ]; then
+      local ips=$(awk '{print $1}' "$REPO_ROOT/.service/hosts" | sort | uniq)
       local added=true
       for ip in $ips; do
-        if ! grep -q "^$ip " /etc/hosts; then
-          added=false
-          break
-        fi
+        if ! grep -q "^$ip " /etc/hosts; then added=false; break; fi
       done
-      if [ "$added" = true ]; then
-        hosts_status="(loaded)"
-      fi
+      if [ "$added" = true ]; then hosts_state="(включен)"; fi
     fi
 
-    local list_file="$REPO_ROOT/lists/ipset-all.txt"
-    local ipset_status="any"
-    if [ -f "$list_file" ]; then
-      local line_count=$(wc -l < "$list_file")
-      if [ "$line_count" -eq 0 ]; then
-        ipset_status="any"
-      elif grep -q "^203\.0\.113\.113/32$" "$list_file"; then
-        ipset_status="none"
-      else
-        ipset_status="loaded"
-      fi
+    echo "Настройки:"
+    echo "  1) Toggle autorun"
+    echo "  2) Toggle game filter $gf_state"
+    echo "  3) Toggle IPSet $ipset_state"
+    echo "  4) Toggle Hosts $hosts_state"
+    echo "  5) Back"
+    echo ""
+    read -rp "Выберите опцию: " sch
+    case "$sch" in
+      1) toggle_autorun ;;
+      2) toggle_gamefilter ;;
+      3) toggle_ipset ;;
+      4) toggle_hosts ;;
+      5) return ;;
+      *) echo "Неверный выбор."; read -rp "Нажмите Enter..." ;;
+    esac
+  done
+}
+
+toggle_hosts() {
+  local local_hosts="$REPO_ROOT/.service/hosts"
+  local backup="/etc/hosts.zapret.bak"
+  if [ ! -f "$local_hosts" ]; then
+    echo "Локальный hosts не найден: $local_hosts"
+    read -rp "Нажмите Enter..."; return
+  fi
+  if [ -f "$backup" ]; then
+    echo "Восстанавливаю /etc/hosts из $backup";
+    sudo cp -f "$backup" /etc/hosts || echo "Не удалось восстановить /etc/hosts"
+    sudo rm -f "$backup" || true
+    echo "Hosts восстановлен."
+  else
+    sudo cp -a /etc/hosts "$backup" || echo "Не удалось создать бэкап /etc/hosts"
+    sudo sh -c "cat '$local_hosts' >> /etc/hosts" || echo "Не удалось применить локальный hosts"
+    echo "Hosts применён."
+  fi
+}
+
+toggle_gamefilter() {
+  local mode=""
+  if [ -f "$GAMEFLAG_FILE" ]; then
+    mode=$(cat "$GAMEFLAG_FILE" 2>/dev/null | tr -d '\n' || echo "")
+  fi
+
+  case "$mode" in
+    "")
+      echo "all" > "$GAMEFLAG_FILE" && echo "Game filter set: включен (TCP и UDP)" || echo "Не удалось установить gamefilter" ;;
+    all)
+      echo "tcp" > "$GAMEFLAG_FILE" && echo "Game filter set: включен (только TCP)" || echo "Не удалось установить gamefilter" ;;
+    tcp)
+      echo "udp" > "$GAMEFLAG_FILE" && echo "Game filter set: включен (только UDP)" || echo "Не удалось установить gamefilter" ;;
+    udp)
+      rm -f "$GAMEFLAG_FILE" && echo "Game filter disabled" || echo "Не удалось отключить gamefilter" ;;
+    *)
+      rm -f "$GAMEFLAG_FILE" && echo "Game filter disabled" || echo "Не удалось отключить gamefilter" ;;
+  esac
+}
+
+toggle_autorun() {
+  if [ -f "$AUTORUN_FLAG" ]; then
+    rm -f "$AUTORUN_FLAG" && echo "Autorun выключен." || echo "Не удалось удалить $AUTORUN_FLAG"
+  else
+    touch "$AUTORUN_FLAG" && echo "Autorun включен." || echo "Не удалось создать $AUTORUN_FLAG"
+  fi
+}
+
+toggle_ipset() {
+  local list_file="$REPO_ROOT/lists/ipset-all.txt"
+  local backup="$list_file.backup"
+  sudo mkdir -p "$REPO_ROOT/lists"
+  if [ ! -f "$list_file" ]; then sudo tee "$list_file" </dev/null >/dev/null; fi
+
+  local status
+  status="$(ipset_get_status)"
+
+  case "$status" in
+    loaded)
+      echo "Switching ipset -> none"
+      if [ ! -f "$backup" ]; then sudo mv "$list_file" "$backup" || true; fi
+      printf '%s\n' "203.0.113.113/32" | sudo tee "$list_file" >/dev/null || true
+      ;;
+    none)
+      echo "Switching ipset -> any"
+      sudo tee "$list_file" </dev/null >/dev/null || true
+      ;;
+    any)
+      echo "Switching ipset -> loaded"
+      if [ -f "$backup" ]; then sudo mv "$backup" "$list_file" || true; else echo "No backup available"; fi
+      ;;
+  esac
+}
+
+update_lists_and_hosts() {
+  echo "Updating all lists and hosts from FlowSeal..."
+  tmpzip="/tmp/flowseal_lists.zip"
+  tmpd=$(mktemp -d)
+  repo="https://github.com/Flowseal/zapret-discord-youtube/archive/refs/heads/main.zip"
+
+  if curl -fsSL "$repo" -o "$tmpzip"; then
+    unzip -q "$tmpzip" -d "$tmpd" || true
+    find "$tmpd" -type f -path "*/lists/*" -print0 | while IFS= read -r -d '' lf; do
+      dest="$REPO_ROOT/lists/$(basename "$lf")"
+      cp -af "$lf" "$dest" || echo "Failed copy $lf"
+    done
+    hs=$(find "$tmpd" -type f -path "*/.service/hosts" -print -quit || true)
+    if [ -n "$hs" ]; then
+      cp -af "$hs" "$REPO_ROOT/.service/hosts" || echo "Failed copy hosts"
+    else
+      curl -fsSL "https://raw.githubusercontent.com/Flowseal/zapret-discord-youtube/refs/heads/main/.service/hosts" -o "$REPO_ROOT/.service/hosts" || true
     fi
+  else
+    echo "Failed to download repository zip for lists. Trying raw fetch..."
+    curl -fsSL "https://raw.githubusercontent.com/Flowseal/zapret-discord-youtube/refs/heads/main/.service/hosts" -o "$REPO_ROOT/.service/hosts" || true
+  fi
 
-    echo "Updates:"
-    echo "  1) Check for Updates"
-    echo ""
-    echo "Hosts:"
-    echo "  2) Add/Remove records $hosts_status"
-    echo "  3) Update locale file hosts"
-    echo ""
-    echo "IPSet:"
-    echo "  4) Toggle IPSet Filter ($ipset_status)"
-    echo "  5) Update IPSet List"
-    echo ""
-    echo "  6) Back"
-    echo ""
+  rm -f "$tmpzip"
+  rm -rf "$tmpd"
+  echo "Успех."
+  read -rp "Нажмите Enter..."
+}
 
-    read -rp "Choose an option: " choice
-    case "$choice" in
+check_for_updates() {
+  clear_screen
+  if ! command -v git >/dev/null 2>&1 || [ ! -d "$REPO_ROOT/.git" ]; then
+    echo "Git не доступен или репозиторий не является git-рабочей копией. Обновляйте вручную или через zip." 
+    read -rp "Нажмите Enter..."
+    return
+  fi
+
+  echo "Подготовка обновления репозитория (git fetch)..."
+  git -C "$REPO_ROOT" fetch --prune || true
+
+  branch=$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
+  remote_ref="origin/$branch"
+
+  mapfile -t local_untracked < <(git -C "$REPO_ROOT" ls-files -o --exclude-standard || true)
+  mapfile -t remote_files < <(git -C "$REPO_ROOT" ls-tree -r --name-only "$remote_ref" 2>/dev/null || true)
+
+  conflicted=()
+  SAVED_CONFLICT_DIR=""
+  if [ ${#local_untracked[@]} -gt 0 ] && [ ${#remote_files[@]} -gt 0 ]; then
+    for f in "${local_untracked[@]}"; do
+      for rf in "${remote_files[@]}"; do
+        [ "$f" = "$rf" ] && conflicted+=("$f") && break
+      done
+    done
+  fi
+
+  if [ ${#conflicted[@]} -gt 0 ]; then
+    echo "Обнаружены неотслеживаемые локальные файлы, которые конфликтуют с обновлением:" 
+    for f in "${conflicted[@]:0:20}"; do echo "  $f"; done
+    if [ ${#conflicted[@]} -gt 20 ]; then echo "  ... and ${#conflicted[@]} more"; fi
+    echo "Выберите действие: (1) Перезаписать локальные файлы  (2) Сохранить их во временную папку и продолжить  (3) Отмена"
+    read -rp "Ваш выбор [1/2/3]: " uchoice
+    case "$uchoice" in
       1)
-        check_for_updates
+        echo "Перезапись локальных файлов..."
+        for f in "${conflicted[@]}"; do rm -rf "$REPO_ROOT/$f" || true; done
         ;;
       2)
-        if [ ! -f "$local_hosts" ]; then
-          echo "Local hosts file not found. Please update it first."
-          read -rp "Press Enter..."
-          continue
-        fi
-        local ips=$(awk '{print $1}' "$local_hosts" | sort | uniq)
-        local added=true
-        for ip in $ips; do
-          if ! grep -q "^$ip " /etc/hosts; then
-            added=false
-            break
-          fi
+        tmpd=$(mktemp -d /tmp/zapret-local-backup-XXXX)
+        SAVED_CONFLICT_DIR="$tmpd"
+        echo "Копирование конфликтующих файлов в $tmpd"
+        for f in "${conflicted[@]}"; do
+          mkdir -p "$(dirname "$tmpd/$f")"
+          mv "$REPO_ROOT/$f" "$tmpd/$f" || true
         done
-        if [ "$added" = true ]; then
-          for ip in $ips; do
-            sudo sed -i "/^$ip /d" /etc/hosts
-          done
-          echo "Records removed from /etc/hosts"
-        else
-          sudo sh -c "cat '$local_hosts' >> /etc/hosts"
-          echo "Records added to /etc/hosts"
-        fi
-        read -rp "Press Enter..."
-        ;;
-      3)
-        mkdir -p "$REPO_ROOT/.service"
-        local hosts_url="https://raw.githubusercontent.com/Flowseal/zapret-discord-youtube/refs/heads/main/.service/hosts"
-        if curl -L -o "$local_hosts" "$hosts_url"; then
-          echo "Local hosts file updated: $local_hosts"
-        else
-          echo "Failed to download hosts file"
-        fi
-        read -rp "Press Enter..."
-        ;;
-      4)
-        local backup_file="$list_file.backup"
-        mkdir -p "$REPO_ROOT/lists"
-        if [ "$ipset_status" = "loaded" ]; then
-          echo "Switching to none..."
-          if [ ! -f "$backup_file" ]; then
-            mv "$list_file" "$backup_file"
-          fi
-          echo "203.0.113.113/32" > "$list_file"
-          echo "Mode switched to none"
-        elif [ "$ipset_status" = "none" ]; then
-          echo "Switching to any..."
-          > "$list_file"
-          echo "Mode switched to any"
-        elif [ "$ipset_status" = "any" ]; then
-          echo "Switching to loaded..."
-          if [ -f "$backup_file" ]; then
-            mv "$backup_file" "$list_file"
-            echo "Mode switched to loaded (from backup)"
-          else
-            echo "Error: No backup available for restoration. Please update the list first."
-          fi
-        fi
-        read -rp "Press Enter..."
-        ;;
-      5)
-        echo "Updating IPSet list..."
-        local url="https://raw.githubusercontent.com/Flowseal/zapret-discord-youtube/refs/heads/main/.service/ipset-service.txt"
-        local backup_file="$list_file.backup"
-        mkdir -p "$REPO_ROOT/lists"
-
-        local mode_changed=false
-        if [ "$ipset_status" != "loaded" ]; then
-          if [ -f "$backup_file" ]; then
-            mv "$backup_file" "$list_file"
-          else
-            : > "$list_file"
-          fi
-          mode_changed=true
-        fi
-
-        if curl -L -o "$list_file" "$url"; then
-          if [ "$mode_changed" = true ]; then
-            echo "Список IPSet обновлен. Режим переключен на loaded."
-          else
-            echo "Список IPSet обновлен."
-          fi
-        else
-          echo "Не удалось скачать список IPSet"
-        fi
-        read -rp "Нажмите Enter..."
-        ;;
-      6)
-        break
+        echo "Файлы сохранены в $tmpd и будут автоматически восстановлены после успешного обновления."
         ;;
       *)
-        echo "Неверный выбор."
+        echo "Отмена обновления."
         read -rp "Нажмите Enter..."
+        return
         ;;
+    esac
+  fi
+
+  echo "Выполняю git pull..."
+  if git -C "$REPO_ROOT" pull --rebase --autostash; then
+    echo "Обновление завершено успешно."
+    if [ -n "${SAVED_CONFLICT_DIR-}" ] && [ -d "$SAVED_CONFLICT_DIR" ]; then
+      echo "Восстанавливаю сохранённые локальные файлы из $SAVED_CONFLICT_DIR ..."
+      find "$SAVED_CONFLICT_DIR" -type f -print0 | while IFS= read -r -d '' sf; do
+        rel=${sf#"$SAVED_CONFLICT_DIR"/}
+        mkdir -p "$(dirname "$REPO_ROOT/$rel")"
+        if [ -f "$REPO_ROOT/$rel" ]; then
+          cp -a "$REPO_ROOT/$rel" "$REPO_ROOT/${rel}.gitremote_backup.$(date +%s)" || true
+        fi
+        mv "$sf" "$REPO_ROOT/$rel" || cp -a "$sf" "$REPO_ROOT/$rel" || true
+      done
+      rm -rf "$SAVED_CONFLICT_DIR"
+      echo "Файлы восстановлены."
+    fi
+  else
+    echo "git pull завершился с ошибкой. Проверьте вручную." 
+  fi
+  read -rp "Нажмите Enter..."
+}
+
+update_binaries() {
+  echo "Updating binaries from FlowSeal..."
+  tmp="/tmp/zapret_flowseal.zip"
+  repo="https://github.com/Flowseal/zapret-discord-youtube/archive/refs/heads/main.zip"
+  if curl -fsSL "$repo" -o "$tmp"; then
+    tmpd=$(mktemp -d)
+    unzip -q "$tmp" -d "$tmpd" || true
+    find "$tmpd" -type f -path "*/bin/*.bin" -exec cp -af {} "$REPO_ROOT/bin/" \; || true
+    rm -rf "$tmpd"
+  else
+    echo "Failed to download repo"
+  fi
+  rm -f "$tmp"
+  echo "Успех."
+  read -rp "Нажмите Enter..."
+}
+
+update_strategies() {
+  echo "Updating strategies (.bat) and running converter..."
+  tmpd=$(mktemp -d)
+  repo="https://github.com/Flowseal/zapret-discord-youtube/archive/refs/heads/main.zip"
+  zf="/tmp/flowseal_strats.zip"
+  if curl -fsSL "$repo" -o "$zf"; then
+    unzip -q "$zf" -d "$tmpd" || true
+    find "$tmpd" -type f -path "*/windows-strategies/*.bat" -print0 | while IFS= read -r -d '' bat; do
+      name=$(basename "$bat")
+      dest="$STRAT_DIR/$name"
+      mkdir -p "$STRAT_DIR"
+      sed -e 's#set "BIN=%~dp0bin\\"#set "BIN=%~dp0..\\bin\\"#g' \
+          -e 's#set "LISTS=%~dp0lists\\"#set "LISTS=%~dp0..\\lists\\"#g' "$bat" > "$dest"
+      echo "Wrote $dest"
+    done
+
+    if [ -x "$CONVERT_SCRIPT" ]; then
+      bash "$CONVERT_SCRIPT"
+    fi
+  else
+    echo "Failed to download strategies"
+  fi
+  rm -f "$zf"
+  rm -rf "$tmpd"
+  echo "Успех."
+  read -rp "Нажмите Enter..."
+}
+
+updates_menu() {
+  while true; do
+    clear_screen
+    echo "Обновления:"
+    echo "  1) Обновление запрета"
+    echo "  2) Обновить Hosts и Lists"
+    echo "  3) Обновление Binaries"
+    echo "  4) Обновление Strategies"
+    echo "  5) Back"
+    echo ""
+    read -rp "Выберите опцию: " ucho
+    case "$ucho" in
+      1) check_for_updates ;;
+      2) update_lists_and_hosts ;;
+      3) update_binaries ;;
+      4) update_strategies ;;
+      5) return ;;
+      *) echo "Неверный выбор."; read -rp "Нажмите Enter..." ;;
     esac
   done
 }
@@ -892,56 +1035,58 @@ manage_files() {
 show_menu() {
   clear_screen
 
-  local gf_status="(отключен)"
-  if [ -f "$GAMEFLAG_FILE" ]; then
-    local gf_mode=$(cat "$GAMEFLAG_FILE" | tr -d '\n' || echo "disabled")
-    case "$gf_mode" in
-      all)
-        gf_status="(TCP и UDP)"
-        ;;
-      tcp)
-        gf_status="(только TCP)"
-        ;;
-      udp)
-        gf_status="(только UDP)"
-        ;;
-      *)
-        gf_status="(отключен)"
-        ;;
-    esac
+  if [ "${UPDATE_AVAILABLE-0}" = "1" ]; then
+    cols=$(tput cols 2>/dev/null || echo 80)
+    msg=$'\033[32mДоступно обновление\033[0m'
+    plain_msg="Доступно обновление"
+    pad=$(( (cols - ${#plain_msg}) / 2 ))
+    [ "$pad" -lt 0 ] && pad=0
+    printf '%*s%s\n' "$pad" "" "$msg"
+    echo ""
   fi
 
-  local ar_status="(выключена)"
-  if [ -f "$AUTORUN_FLAG" ]; then ar_status="(включена)"; fi
+  local svc_state="Выключено"
+  if sudo systemctl is-active --quiet zapret.service 2>/dev/null; then
+    svc_state="Включено"
+    local active_strategy="Нет"
+    if [ -f "$REPO_ROOT/.active_strategy" ]; then
+      active_strategy=$(cat "$REPO_ROOT/.active_strategy" 2>/dev/null || echo "Нет")
+      [ -z "$active_strategy" ] && active_strategy="Нет"
+    fi
+  else
+    svc_state="Выключено"
+    local active_strategy="Нет"
+  fi
+
+  local autorun_state="Выключен"
+  if [ -f "$AUTORUN_FLAG" ]; then autorun_state="Включен"; fi
+
+  printf 'Состояние: %s\n' "$svc_state"
+  printf 'Автозапуск: %s\n' "$autorun_state"
+  printf 'Активная стратегия: %s\n\n' "$active_strategy"
 
   cat <<MENU
-Выберите действие:
-1) On/Off strategy
-2) Install strategies
-3) Convert strategies
-4) Status service
-5) Toggle autorun $ar_status
-6) Toggle game filter $gf_status
-7) Manage Files
-8) Exit
+[ 1 ] 🚀 Вкл/Выкл стратегию
+[ 2 ] 📁 Установить стратегию
+[ 3 ] ⚙️  Настройки
+[ 4 ] 🔄 Обновления
+[ 5 ] 🛠  Утилиты
+[ 6 ] ❌ Выход
 
-0) Delete Zapret
+[ 0 ] 🗑 Удалить Zapret
 MENU
   read -rp "Ваш выбор: " choice
   case "$choice" in
     1) manage_strategy ;;
     2) install_selected_strategy ;;
-    3) convert_strategies ;;
-    4) service_status ;;
-    5) toggle_autorun ;;
-    6) toggle_gamefilter ;;
-    7) manage_files ;;
-    8) clear_screen; echo "Выход."; exit 0 ;;
+    3) settings_menu ;;
+    4) updates_menu ;;
+    5) utilities_menu ;;
+    6) clear_screen; echo "Выход."; exit 0 ;;
     0) delete_zapret ;;
     *) echo "Неверный выбор."; read -rp "Нажмите Enter...";;
   esac
 }
-
 
 
 
@@ -1062,7 +1207,7 @@ install_selected_strategy() {
   finalize_for_opt "${OPT_REPO}/config" || true
 
   if [ -x "$OPT_REPO/install_easy.sh" ]; then
-    sudo bash "$OPT_REPO/install_easy.sh" || {
+    sudo bash -c "yes '' | bash '$OPT_REPO/install_easy.sh'" || {
       echo "Ошибка при запуске install_easy.sh"
       read -rp "Нажмите Enter..."
       return
@@ -1074,6 +1219,40 @@ install_selected_strategy() {
   echo "Установка стратегии завершена."
   read -rp "Нажмите Enter для возврата в меню..."
 }
+
+ensure_sudo
+
+if [ ! -d "$OPT_REPO" ]; then
+  clone_opt_repo_if_needed || true
+fi
+
+copy_files_replace_to_opt || true
+
+if [ -d "$STRAT_DIR" ]; then
+  converter_name=$(basename "$CONVERT_SCRIPT")
+  have_other=0
+  shopt -s nullglob dotglob
+  for f in "$STRAT_DIR"/*; do
+    [ -e "$f" ] || continue
+    bn=$(basename "$f")
+    if [ "$bn" != "$converter_name" ]; then
+      have_other=1
+      break
+    fi
+  done
+  shopt -u nullglob dotglob
+  if [ "$have_other" -eq 0 ]; then
+    if ensure_convert; then
+      bash "$CONVERT_SCRIPT" || true
+    fi
+  fi
+fi
+
+if check_update_available; then
+  UPDATE_AVAILABLE=1
+else
+  UPDATE_AVAILABLE=0
+fi
 
 while true; do
   show_menu

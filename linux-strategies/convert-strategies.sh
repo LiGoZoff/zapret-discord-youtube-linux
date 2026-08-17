@@ -268,7 +268,9 @@ for bat in "$WINDOWS_DIR"/*.bat; do
       content+="$line"$'\n'
     fi
   done
-  content="$(printf '%s' "$content" | sed -E 's/%GameFilter%|%GameFilter|\\$GameFilter|\\$GameFilter|\\bGameFilter\\b/1024-65535/g')"
+
+  content="$(printf '%s' "$content" | sed -E 's/%GameFilterTCP%|%GameFilterUDP%|%GameFilter%|\\$GameFilterTCP|\\$GameFilterUDP|\\$GameFilter|\bGameFilterTCP\b|\bGameFilterUDP\b|\bGameFilter\b/1024-65535/g')"
+  content="$(printf '%s' "$content" | sed -E 's/([0-9,-]+)TCP%/\1/g; s/([0-9,-]+)UDP%/\1/g')"
   content="${content//\\1/}" 
   content="${content//<HOSTLIST>/}"
 
