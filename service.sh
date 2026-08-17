@@ -211,11 +211,26 @@ _reinstall_strategy() {
   finalize_for_opt "${OPT_REPO}/config" || true
 
   if [ -x "$OPT_REPO/install_easy.sh" ]; then
-    sudo bash -c "yes '' | bash '$OPT_REPO/install_easy.sh'" || {
-      echo "Ошибка при запуске install_easy.sh"
-      read -rp "Нажмите Enter..."
+    local install_out
+    # Добавлен timeout чтобы отлавливать бесконечный луп ввода yes ''
+    install_out=$(sudo timeout 15s bash -c "yes '' | bash '$OPT_REPO/install_easy.sh'" 2>&1)
+    
+    if ! sudo systemctl is-active --quiet zapret.service 2>/dev/null; then
+      clear_screen
+      echo -e "\033[0;31mОшибка: Стратегия $strategy не смогла запуститься!\033[0m"
+      
+      local err_line=$(echo "$install_out" | grep -iE 'error|ошибка|not found|no such file|invalid|missing' | tail -n 1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+      if [ -z "$err_line" ]; then
+          err_line=$(sudo systemctl status zapret.service --no-pager | grep -iE 'error|ошибка|failed' | tail -n 1)
+      fi
+      if [ -z "$err_line" ]; then err_line="Проверьте правильность параметров или наличие бинарников/листов IPset."; fi
+      
+      echo -e "\n\033[1;33mПричина ошибки:\033[0m"
+      echo "$err_line"
+      echo ""
+      read -rp "Нажмите Enter для возврата..."
       return
-    }
+    fi
   else
     echo "Предупреждение: install_easy.sh не найден или не исполняемый в $OPT_REPO"
   fi
@@ -708,7 +723,7 @@ utilities_menu() {
     echo "Utilities:"
     echo "  1) Конвертация стратегий"
     echo "  2) Тест стратегий (полный)"
-    echo "  3) Тест стратегий (быстро)"
+    echo "  3) Тест стратегий (быстрый)"
     echo "  4) Back"
     echo ""
     read -rp "Выберите опцию: " uchoice
@@ -1159,26 +1174,27 @@ install_selected_strategy() {
     echo ""
   done
 
-  local idx=$((${#strategies[@]} + 1))
+  local idx=${#strategies[@]}
   echo ""
-  echo "$idx) Отмена"
+  echo "0) Отмена"
   echo ""
   
   while true; do
     read -rp "Выберите стратегию (номер): " strat_choice
-    if [[ "$strat_choice" =~ ^[0-9]+$ ]] && [ "$strat_choice" -ge 1 ] && [ "$strat_choice" -le "$idx" ]; then
+    if [[ "$strat_choice" =~ ^[0-9]+$ ]] && [ "$strat_choice" -ge 0 ] && [ "$strat_choice" -le "$idx" ]; then
       break
     fi
     echo "Неверный выбор. Повторите ввод."
   done
 
-  if [ "$strat_choice" -eq "$idx" ]; then
+  if [ "$strat_choice" -eq 0 ]; then
     return
   fi
 
   local selected_idx=$((strat_choice-1))
   local selected_strategy="${strategies[$selected_idx]}"
   local cfg_src="$STRAT_DIR/$selected_strategy"
+  
   clear_screen
   echo "Как установить стратегию?"
   echo "1) С автозагрузкой"
@@ -1195,9 +1211,11 @@ install_selected_strategy() {
 
   if [ "$autorun_choice" -eq 1 ]; then
     touch "$AUTORUN_FLAG"
+  else
+    rm -f "$AUTORUN_FLAG"
   fi
 
-  echo "$selected_strategy" > "$REPO_ROOT/.active_strategy"
+  echo "$selected_strategy" | sudo tee "$REPO_ROOT/.active_strategy" >/dev/null
 
   sudo cp -a "$cfg_src" "$OPT_REPO/config"
   sanitize_strategy_config "${OPT_REPO}/config"
@@ -1207,11 +1225,25 @@ install_selected_strategy() {
   finalize_for_opt "${OPT_REPO}/config" || true
 
   if [ -x "$OPT_REPO/install_easy.sh" ]; then
-    sudo bash -c "yes '' | bash '$OPT_REPO/install_easy.sh'" || {
-      echo "Ошибка при запуске install_easy.sh"
-      read -rp "Нажмите Enter..."
+    local install_out
+    install_out=$(sudo timeout 15s bash -c "yes '' | bash '$OPT_REPO/install_easy.sh'" 2>&1)
+    
+    if ! sudo systemctl is-active --quiet zapret.service 2>/dev/null; then
+      clear_screen
+      echo -e "\033[0;31mОшибка: Стратегия $selected_strategy не смогла запуститься!\033[0m"
+      
+      local err_line=$(echo "$install_out" | grep -iE 'error|ошибка|not found|no such file|invalid|missing' | tail -n 1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+      if [ -z "$err_line" ]; then
+          err_line=$(sudo systemctl status zapret.service --no-pager | grep -iE 'error|ошибка|failed' | tail -n 1)
+      fi
+      if [ -z "$err_line" ]; then err_line="Проверьте правильность параметров или наличие бинарников/листов IPset."; fi
+      
+      echo -e "\n\033[1;33mПричина ошибки:\033[0m"
+      echo "$err_line"
+      echo ""
+      read -rp "Нажмите Enter для возврата..."
       return
-    }
+    fi
   else
     echo "Предупреждение: install_easy.sh не найден или не исполняемый в $OPT_REPO"
   fi
