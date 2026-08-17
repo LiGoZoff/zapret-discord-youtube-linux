@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
-REPO_ROOT="$(readlink -f "$SCRIPT_DIR")"
+
 BIN_DIR="$REPO_ROOT/bin"
 CONVERT_SCRIPT="$REPO_ROOT/linux-strategies/convert-strategies.sh"
 STRAT_DIR="$REPO_ROOT/linux-strategies"
