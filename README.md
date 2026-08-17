@@ -2,7 +2,7 @@ Zapret для линукса, работающий на основе конве�
 
 Буду благодарен, если поможете в продвижении, поставив звездочку
 
-**Стратегии, бинарники и листы взяты из [zapret-discord-youtube](https://github.com/Flowseal/zapret-discord-youtube) и [youtubediscord](https://github.com/youtubediscord/zapret)** 
+**Стратегии, бинарники и листы взяты из [zapret-discord-youtube](https://github.com/Flowseal/zapret-discord-youtube)** 
 ## Использование
 
 Скачать архив и распаковать в любую директорию. Или можно склонировать:
